@@ -1,0 +1,1 @@
+system.out.println("Covariant Script Package Manager")
