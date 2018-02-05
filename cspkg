@@ -123,12 +123,12 @@ switch system.args.at(1)
     case "--help"
 @begin
 system.out.print("
-Covariant Script Package Manager\n
-    --install <path> Install a CovScript Package/Extension\n
-    --uninstall <name> Uninstall a CovScript Package/Extension\n
-    --list List Installed CovScript Package/Extension\n
-    --help Print help infomation.\n
-    --version Print version info.\n
+Covariant Script Package Manager 1.0.0\n
+    --install   <path>    Install a CovScript Package/Extension\n
+    --uninstall <name>    Uninstall a CovScript Package/Extension\n
+    --list                List Installed CovScript Package/Extension\n
+    --help                Print help infomation.\n
+    --version             Print version info.\n
 ")
 @end
     end

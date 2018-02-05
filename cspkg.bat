@@ -1,5 +1,5 @@
 @echo off
-set ARGS=.\cspkg
+set ARGS="%~dp0\cspkg"
 :LOOP
     set index=%1
     if %index%! == ! goto END
