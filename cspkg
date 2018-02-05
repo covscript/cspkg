@@ -1,1 +1,138 @@
-cs ./cspkg.csc $1 $2 $3 $4 $5
+#!/usr/bin/cs
+struct package_info
+    var name=null
+    var type=null
+end
+function get_package_info(path)
+    var info=gcnew package_info
+    var pos=path.find(".",0)
+    if pos==-1
+        throw runtime.exception("Unrecongnized File.")
+    end
+    info->name=path.substr(0,pos)
+    info->type=path.substr(pos+1,path.size()-pos-1)
+    return info
+end
+function get_file_name(path)
+    var pos=path.rfind(to_string(system.path.separator),-1)
+    if pos!=-1
+        return path.substr(pos+1,path.size()-pos-1)
+    else
+        return path
+    end
+end
+function answer(question)
+    loop
+        system.out.println(question+"(y/n)")
+        switch system.console.getch().tolower()
+            case 'y'
+                return true
+            end
+            case 'n'
+                return false
+            end
+            default
+                system.out.println("Please press \'y\' for yes or \'n\' for not.")
+            end
+        end
+    end
+end
+function draw_separator()
+    for i=1 to system.console.terminal_width()
+        system.out.print("-")
+    end
+    system.out.println("")
+end
+# Main Program
+var path=runtime.get_import_path().split({system.path.delimiter}).back()
+if system.args.size()<2
+    system.out.println("Error: No command.")
+    system.out.println("Enter \"--help\" to view help.")
+    system.exit(-1)
+end
+switch system.args.at(1)
+    default
+        system.out.println("Unsupported Function.")
+        system.exit(-1)
+    end
+    case "--install"
+        if system.args.size()!=3
+            system.out.println("Wrong syntax.")
+            system.exit(-1)
+        end
+        var file_name=get_file_name(clone(system.args.at(2)))
+        if system.file.exists(path+system.path.separator+file_name)
+            if !answer("Target exists.Overrite?")
+                system.out.println("Installation aborted.")
+                system.exit(0)
+            end
+        end
+        system.file.copy(system.args.at(2),path+system.path.separator+file_name)
+        system.out.println("Installation succeed.")
+    end
+    case "--uninstall"
+        if system.args.size()!=3
+            system.out.println("Wrong syntax.")
+            system.exit(-1)
+        end
+        var extension_name=path+system.path.separator+system.args.at(2)+".cse"
+        var package_name=path+system.path.separator+system.args.at(2)+".csp"
+        if !system.file.remove(extension_name)&&!system.file.remove(package_name)
+            system.out.println("Uninstall failed.")
+            system.exit(-1)
+        else
+            system.out.println("Uninstall succeed.")
+            system.exit(0)
+        end
+    end
+    case "--list"
+        system.out.println("Installed Package/Extension")
+        draw_separator()
+        var info=system.path.scan(path)
+        var packages=new array
+        for it iterate info
+            if it.type()==system.path.type.reg
+                packages.push_back(get_package_info(it.name()))
+            end
+        end
+        var max_size=0
+        for it iterate packages
+            if it->name.size()>max_size
+                max_size=it->name.size()
+            end
+        end
+        system.out.print("Name")
+        for i=0 to max_size
+            system.out.print(" ")
+        end
+        system.out.println("Type")
+        draw_separator()
+        for it iterate packages
+            system.out.print(it->name)
+            for i=0 to max_size-it->name.size()
+                system.out.print(" ")
+            end
+            system.out.print("    ")
+            if it->type=="cse"
+                system.out.println("CovScript Extension")
+            else
+                system.out.println("CovScript Package")
+            end
+        end
+    end
+    case "--help"
+@begin
+system.out.print("
+Covariant Script Package Manager\n
+    --install <path> Install a CovScript Package/Extension\n
+    --uninstall <name> Uninstall a CovScript Package/Extension\n
+    --list List Installed CovScript Package/Extension\n
+    --help Print help infomation.\n
+    --version Print version info.\n
+")
+@end
+    end
+    case "--version"
+        system.out.println("cspkg v1.0.0")
+    end
+end
