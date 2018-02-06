@@ -1,4 +1,4 @@
-#!/usr/bin/cs
+#!/usr/bin/env cs
 struct package_info
     var name=null
     var type=null
