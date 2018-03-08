@@ -1,4 +1,5 @@
 #!/usr/bin/env cs
+import imgui_ext
 import imgui
 struct package_info
     var name=null
@@ -80,6 +81,30 @@ function about()
         end
     end_window()
 end
+struct inst_confirm_win extends imgui_ext.message_box
+    function on_confirm() override
+        status="Installation succeed."
+    end
+end
+var install_confirm=new inst_confirm_win
+install_confirm.title="Install"
+install_confirm.message="Target exists.Overwrite?"
+struct inst_win extends imgui_ext.file_explorer
+    function on_confirm() override
+        var file_name=get_file_name(this.path)
+        if system.file.exists(path+system.path.separator+file_name)
+            install_confirm.show()
+            return
+        end
+        system.file.copy(this.path,path+system.path.separator+file_name)
+        status="Installation succeed."
+    end
+end
+var install=new inst_win
+install.title="Install"
+install.filters.push_back(".*\\.cse")
+install.filters.push_back(".*\\.csp")
+install.read_path()
 function uninstall()
     var uninstall_window=true
     begin_window("Uninstall",uninstall_window,{flags.always_auto_resize,flags.no_collapse})
@@ -202,7 +227,7 @@ function gui()
                 load()
             end
             if button("Install New")
-                show_install=true
+                install.win_opened=true
             end
             if button("Uninstall")
                 show_uninstall=true
@@ -214,7 +239,11 @@ function gui()
         if show_about
             about()
         end
-        if show_install
+        if install_confirm.is_opened()
+            install_confirm.render()
+        end
+        if install.is_opened()
+            install.render()
         end
         if show_uninstall
             uninstall()
@@ -262,7 +291,7 @@ switch system.args.at(1)
         end
         var file_name=get_file_name(clone(system.args.at(2)))
         if system.file.exists(path+system.path.separator+file_name)
-            if !answer("Target exists.Overrite?")
+            if !answer("Target exists.Overwrite?")
                 system.out.println("Installation aborted.")
                 system.exit(0)
             end

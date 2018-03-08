@@ -2,3 +2,5 @@
 *.cse
 # Log Files
 *.log
+# ImGui INI
+imgui.ini

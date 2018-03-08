@@ -1,0 +1,97 @@
+package imgui_ext
+import regex
+import imgui
+using imgui
+struct window_base
+    var win_opened=false
+    var win_flags={flags.no_collapse,flags.always_auto_resize}
+    var title="ImGui Window"
+    function show()
+        win_opened=true
+    end
+    function is_opened()
+        return win_opened
+    end
+    function on_draw()
+    end
+    function on_confirm()
+    end
+    function render()
+        begin_window(title,win_opened,win_flags)
+            set_window_focus()
+            on_draw()
+        end_window()
+    end
+end
+struct message_box extends window_base
+    var message=new string
+    function on_draw() override
+        text(message)
+        spacing()
+        if button("Yes") || is_key_pressed(to_integer('Y'))
+            this.on_confirm()
+            this.win_opened=false
+        end
+        same_line()
+        if button("No") || is_key_pressed(to_integer('N'))
+            this.win_opened=false
+        end
+    end
+end
+struct file_explorer extends window_base
+    var path=to_string(system.path.separator)
+    var message=new string
+    var filters={}
+    var path_info=null
+    var selected=0
+    function read_path()
+        path_info=new array
+        var info=system.path.scan(path)
+        var regs=new array
+        var files=new array
+        for it iterate filters
+            regs.push_back(regex.build(it))
+        end
+        for it iterate info
+            if it.type()==system.path.type.dir
+                path_info.push_back(to_string(system.path.separator)+it.name())
+            else
+                for reg iterate regs
+                    if !reg.match(it.name()).empty()
+                        files.push_back(it.name())
+                    end
+                end
+            end
+        end
+        for it iterate files
+            path_info.push_back(it)
+        end
+    end
+    function on_draw() override
+        text(message)
+        separator()
+        list_box("##dir_list",selected,path_info)
+        separator()
+        if menu_item("Enter","",path_info.at(selected)[0]==system.path.separator)
+            if path[path.size()-1]==system.path.separator
+                path.cut(1)
+            end
+            path+=path_info.at(selected)
+            read_path()
+            selected=0
+        end
+        separator()
+        if menu_item("Select","",path_info.at(selected)[0]!=system.path.separator)
+            if path[path.size()-1]!=system.path.separator
+                path+=system.path.separator
+            end
+            path+=path_info.at(selected)
+            this.on_confirm()
+            this.win_opened=false
+        end
+        separator()
+        if menu_item("Cancel","",true)
+            this.win_opened=false
+        end
+    end
+end
