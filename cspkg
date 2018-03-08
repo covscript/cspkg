@@ -1,4 +1,5 @@
 #!/usr/bin/env cs
+import imgui
 struct package_info
     var name=null
     var type=null
@@ -19,6 +20,137 @@ function get_file_name(path)
         return path.substr(pos+1,path.size()-pos-1)
     else
         return path
+    end
+end
+var path=runtime.get_import_path().split({system.path.delimiter}).back()
+function menu()
+    menu_item("Cspkg","",false)
+    if begin_menu("Tools",true)
+        if begin_menu("Styles",true)
+            if menu_item("Classic","",true)
+                style_color_classic()
+            end
+            if menu_item("Light","",true)
+                style_color_light()
+            end
+            if menu_item("Dark","",true)
+                style_color_dark()
+            end
+            end_menu()
+        end
+        end_menu()
+    end
+    if begin_menu("Help",true)
+        if menu_item("About this software","",true)
+            show_about=true
+        end
+        end_menu()
+    end
+    if menu_item("Exit","ESC",true)
+        show_confirm=true
+    end
+end
+function confirm()
+    var confirm_window=true
+    begin_window("Confirm",confirm_window,{flags.always_auto_resize,flags.no_collapse})
+        text("Do you want to exit?")
+        spacing()
+        if button("Yes") || is_key_pressed(to_integer('Y'))
+            system.exit(0)
+        end
+        same_line()
+        if button("No") || !confirm_window || is_key_pressed(to_integer('N'))
+            show_confirm=false
+        end
+    end_window()
+end
+function about()
+    var about_opened=true
+    begin_window("About",about_opened,{flags.always_auto_resize,flags.no_collapse})
+        if !about_opened
+            show_about=false
+        end
+        text("CovScript Package Manager")
+        bullet()
+        text("Version 1.0.0")
+        if button("Ok")
+            show_about=false
+        end
+    end_window()
+end
+function gui()
+    using imgui
+    var show_about=false
+    var show_confirm=false
+    var app=window_application(0.75*imgui.get_monitor_width(0),0.75*imgui.get_monitor_height(0),"CovScript Package Manager")
+    var window_opened=true
+    var window_flags={flags.no_saved_settings,flags.no_title_bar,flags.no_resize,flags.no_move,flags.no_collapse,flags.horizontal_scroll_bar}
+    var select=0
+    var items=new array
+    var title=new string
+    function load()
+        items=new array
+        var info=system.path.scan(path)
+        var packages=new array
+        for it iterate info
+            if it.type()==system.path.type.reg
+                packages.push_back(get_package_info(it.name()))
+            end
+        end
+        var max_size=0
+        for it iterate packages
+            if it->name.size()>max_size
+                max_size=it->name.size()
+            end
+        end
+        title="Name"
+        for i=0 to max_size
+            title+=" "
+        end
+        title+="Type"
+        var item=new string
+        for it iterate packages
+            item=it->name
+            for i=0 to max_size-it->name.size()
+                item+=" "
+            end
+            item+="    "
+            if it->type=="cse"
+                item+="CovScript Extension"
+            else
+                item+="CovScript Package"
+            end
+            items.push_back(item)
+        end
+    end
+    load()
+    while !app.is_closed()
+        app.prepare()
+        if begin_main_menu_bar()
+            menu()
+            end_main_menu_bar()
+        end
+        if is_key_pressed(get_key_index(keys.escape))
+            show_confirm=true
+        end
+        begin_window("cspkg_gui",window_opened,window_flags)
+            set_window_pos(vec2(0,20))
+            set_window_size(vec2(app.get_window_width(),app.get_window_height()-20))
+            if begin_popup_window()
+                menu()
+                end_popup()
+            end
+            text(title)
+            separator()
+            list_box("",select,items)
+        end_window()
+        if show_confirm
+            confirm()
+        end
+        if show_about
+            about()
+        end
+        app.render()
     end
 end
 function answer(question)
@@ -44,7 +176,6 @@ function draw_separator()
     system.out.println("")
 end
 # Main Program
-var path=runtime.get_import_path().split({system.path.delimiter}).back()
 if system.args.size()<2
     system.out.println("Error: No command.")
     system.out.println("Enter \"--help\" to view help.")
@@ -120,6 +251,9 @@ switch system.args.at(1)
             end
         end
     end
+    case "--gui"
+        gui()
+    end
     case "--help"
 @begin
 system.out.print("
@@ -127,6 +261,7 @@ Covariant Script Package Manager 1.0.0\n
     --install   <path>    Install a CovScript Package/Extension\n
     --uninstall <name>    Uninstall a CovScript Package/Extension\n
     --list                List Installed CovScript Package/Extension\n
+    --gui                 Run Cspkg GUI.\n
     --help                Print help infomation.\n
     --version             Print version info.\n
 ")
