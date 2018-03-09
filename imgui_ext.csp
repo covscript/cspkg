@@ -14,7 +14,7 @@ struct window_base
     end
     function on_draw()
     end
-    function on_confirm()
+    function on_confirm(arg)
     end
     function render()
         begin_window(title,win_opened,win_flags)
@@ -39,13 +39,18 @@ struct message_box extends window_base
     end
 end
 struct file_explorer extends window_base
-    var path=to_string(system.path.separator)
+    var path="."
     var message=new string
     var filters={}
     var path_info=null
+    var path_name=null
     var selected=0
     function read_path()
+        if path[path.size()-1]!=system.path.separator
+            path+=system.path.separator
+        end
         path_info=new array
+        path_name=new array
         var info=system.path.scan(path)
         var regs=new array
         var files=new array
@@ -54,11 +59,11 @@ struct file_explorer extends window_base
         end
         for it iterate info
             if it.type()==system.path.type.dir
-                path_info.push_back(to_string(system.path.separator)+it.name())
+                path_info.push_back(it)
             else
                 for reg iterate regs
                     if !reg.match(it.name()).empty()
-                        files.push_back(it.name())
+                        files.push_back(it)
                     end
                 end
             end
@@ -66,27 +71,32 @@ struct file_explorer extends window_base
         for it iterate files
             path_info.push_back(it)
         end
+        for it iterate path_info
+            if it.type()==system.path.type.dir
+                path_name.push_back(to_string(system.path.separator)+it.name())
+            else
+                path_name.push_back(it.name())
+            end
+        end
     end
     function on_draw() override
         text(message)
         separator()
-        list_box("##dir_list",selected,path_info)
-        separator()
-        if menu_item("Enter","",path_info.at(selected)[0]==system.path.separator)
-            if path[path.size()-1]==system.path.separator
-                path.cut(1)
+        list_box("##dir_list",selected,path_name)
+        var info=path_info.at(selected)
+        if is_item_hovered()&&is_mouse_double_clicked(0)
+            if info.type()==system.path.type.dir
+                path+=info.name()
+                read_path()
+                selected=0
+            else
+                this.on_confirm(path+info.name())
+                this.win_opened=false
             end
-            path+=path_info.at(selected)
-            read_path()
-            selected=0
         end
         separator()
-        if menu_item("Select","",path_info.at(selected)[0]!=system.path.separator)
-            if path[path.size()-1]!=system.path.separator
-                path+=system.path.separator
-            end
-            path+=path_info.at(selected)
-            this.on_confirm()
+        if menu_item("Select","",info.type()!=system.path.type.dir)
+            this.on_confirm(path+info.name())
             this.win_opened=false
         end
         separator()
