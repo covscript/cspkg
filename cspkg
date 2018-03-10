@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
-import imgui_ext
-import imgui
+import picasso
+using picasso.imgui
 struct package_info
     var name=null
     var type=null
@@ -24,232 +24,229 @@ function get_file_name(path)
     end
 end
 var path=runtime.get_import_path().split({system.path.delimiter}).back()
-function menu()
-    menu_item("Cspkg","",false)
-    if begin_menu("Tools",true)
-        if begin_menu("Styles",true)
-            if menu_item("Classic","",true)
-                style_color_classic()
-            end
-            if menu_item("Light","",true)
-                style_color_light()
-            end
-            if menu_item("Dark","",true)
-                style_color_dark()
-            end
-            end_menu()
-        end
-        end_menu()
+# About Window
+struct about_win extends picasso.message_box
+    function initialize() override
+        this.title="About"
     end
-    if begin_menu("Help",true)
-        if menu_item("About this software","",true)
-            show_about=true
-        end
-        end_menu()
-    end
-    if menu_item("Exit","ESC",true)
-        show_confirm=true
-    end
-end
-function confirm()
-    var confirm_window=true
-    begin_window("Confirm",confirm_window,{flags.always_auto_resize,flags.no_collapse})
-        set_window_focus()
-        text("Do you want to exit?")
-        spacing()
-        if button("Yes") || is_key_pressed(to_integer('Y'))
-            system.exit(0)
-        end
-        same_line()
-        if button("No") || !confirm_window || is_key_pressed(to_integer('N'))
-            show_confirm=false
-        end
-    end_window()
-end
-function about()
-    var about_opened=true
-    begin_window("About",about_opened,{flags.always_auto_resize,flags.no_collapse})
-        set_window_focus()
-        if !about_opened
-            show_about=false
-        end
+    function on_layout() override
         text("CovScript Package Manager")
         bullet()
         text("Version 1.0.0")
-        if button("Ok")
-            show_about=false
-        end
-    end_window()
-end
-struct inst_confirm_win extends imgui_ext.message_box
-    function on_confirm() override
-        status="Installation succeed."
     end
 end
-var install_confirm=new inst_confirm_win
-install_confirm.title="Install"
-install_confirm.message="Target exists.Overwrite?"
-struct inst_win extends imgui_ext.file_explorer
-    function on_confirm(_path) override
+# Install
+struct inst_win extends picasso.file_explorer
+    var gui=null
+    var confirm_inst=gcnew picasso.question_box
+    function on_close_handle(_path)
+        if typeid _path!=typeid string
+            return false
+        end
         var file_name=get_file_name(_path)
         if system.file.exists(path+system.path.separator+file_name)
-            install_confirm.show()
-            return
+            confirm_inst->show()
+            return false
         end
         system.file.copy(_path,path+system.path.separator+file_name)
-        status="Installation succeed."
+        gui->status="Installation succeed."
+        gui->load()
+        return false
+    end
+    function confirm_inst_on_close_handle(arg)
+        if arg
+            gui->status="Installation succeed."
+        end
+        return false
+    end
+    function initialize() override
+        this.title="Install"
+        this.message="Please select a package"
+        this.filters.push_back(".*\\.cse")
+        this.filters.push_back(".*\\.csp")
+        this.on_close.add_listener(on_close_handle)
+        confirm_inst->title="Install"
+        confirm_inst->question="Target exists.Overwrite?"
+        confirm_inst->on_close.add_listener(confirm_inst_on_close_handle)
     end
 end
-var install=new inst_win
-install.title="Install"
-install.message="Please select a package"
-install.filters.push_back(".*\\.cse")
-install.filters.push_back(".*\\.csp")
-function uninstall()
-    var uninstall_window=true
-    begin_window("Uninstall",uninstall_window,{flags.always_auto_resize,flags.no_collapse})
-        set_window_focus()
-        var info=packages.at(select)
+# Uninstall
+struct uninst_win extends picasso.question_box
+    var gui=null
+    function on_close_handle(arg)
+        if arg
+            var info=gui->packages.at(gui->select)
+            var extension_name=path+system.path.separator+info->name+".cse"
+            var package_name=path+system.path.separator+info->name+".csp"
+            if !system.file.remove(extension_name)&&!system.file.remove(package_name)
+                gui->status="Uninstall failed.("+info->name+")"
+            else
+                gui->status="Uninstall succeed.("+info->name+")"
+            end
+            gui->load()
+        end
+        return false
+    end
+    function initialize() override
+        this.title="Uninstall"
+        this.on_close.add_listener(on_close_handle)
+    end
+    function on_layout() override
+        var info=gui->packages.at(gui->select)
         if info->type=="cse"
             text("Do you want to uninstall the extension \""+info->name+"\"?")
         else
             text("Do you want to uninstall the package \""+info->name+"\"?")
         end
-        spacing()
-        if button("Yes") || is_key_pressed(to_integer('Y'))
-            var extension_name=path+system.path.separator+info->name+".cse"
-            var package_name=path+system.path.separator+info->name+".csp"
-            if !system.file.remove(extension_name)&&!system.file.remove(package_name)
-                status="Uninstall failed.("+info->name+")"
-            else
-                status="Uninstall succeed.("+info->name+")"
-            end
-            load()
-            show_uninstall=false
-        end
-        same_line()
-        if button("No") || !uninstall_window || is_key_pressed(to_integer('N'))
-            show_uninstall=false
-        end
-    end_window()
+    end
 end
-function gui()
-    using imgui
-    var show_about=false
-    var show_confirm=false
-    var show_install=false
-    var show_uninstall=false
-    var app=window_application(0.75*imgui.get_monitor_width(0),0.75*imgui.get_monitor_height(0),"CovScript Package Manager")
-    var window_opened=true
-    var window_flags={flags.no_saved_settings,flags.no_title_bar,flags.no_resize,flags.no_move,flags.no_collapse,flags.horizontal_scroll_bar}
+# Main Window
+struct gui_window extends picasso.base_window
+    var confirm=gcnew picasso.question_box
+    var about=gcnew about_win
+    var install=gcnew inst_win
+    var uninstall=gcnew uninst_win
     var select=0
     var status="No error."
     var items=new array
-    var title=new string
     var packages=new array
     function load()
+        select=0
         items=new array
         packages=new array
         var info=system.path.scan(path)
         for it iterate info
             if it.type()==system.path.type.reg
-                packages.push_back(get_package_info(it.name()))
+                var pack_info=get_package_info(it.name())
+                packages.push_back(pack_info)
+                items.push_back(pack_info->name)
             end
-        end
-        var max_size=0
-        for it iterate packages
-            if it->name.size()>max_size
-                max_size=it->name.size()
-            end
-        end
-        title="Name"
-        for i=0 to max_size
-            title+=" "
-        end
-        title+="Type"
-        var item=new string
-        for it iterate packages
-            item=it->name
-            for i=0 to max_size-it->name.size()
-                item+=" "
-            end
-            item+="    "
-            if it->type=="cse"
-                item+="CovScript Extension"
-            else
-                item+="CovScript Package"
-            end
-            items.push_back(item)
         end
     end
-    load()
-    while !app.is_closed()
-        app.prepare()
-        if begin_main_menu_bar()
-            menu()
-            end_main_menu_bar()
-        end
-        if is_key_pressed(get_key_index(keys.escape))
-            show_confirm=true
-        end
-        begin_window("cspkg_gui",window_opened,window_flags)
-            set_window_pos(vec2(0,20))
-            set_window_size(vec2(app.get_window_width(),app.get_window_height()-20))
-            if begin_popup_window()
-                menu()
-                end_popup()
+    function menu()
+        if begin_menu("Tools",true)
+            if begin_menu("Styles",true)
+                if menu_item("Classic","",true)
+                    style_color_classic()
+                end
+                if menu_item("Light","",true)
+                    style_color_light()
+                end
+                if menu_item("Dark","",true)
+                    style_color_dark()
+                end
+                end_menu()
             end
-            text(title)
-            separator()
-            list_box("Package List##list",select,items)
-            if begin_popup_item("list")
-                menu_item("Menu","",false)
-                if menu_item("Refresh","",true)
-                    load()
-                end
-                if begin_menu("Property",true)
-                    var info=packages.at(select)
-                    if info->type=="cse"
-                        menu_item("CovScript Extension","",false)
-                    else
-                        menu_item("CovScript Package","",false)
-                    end
-                    menu_item("Name: "+info->name,"",false)
-                    end_menu()
-                end
-                if menu_item("Uninstall","",true)
-                    show_uninstall=true
-                end
-                end_popup()
+            end_menu()
+        end
+        if begin_menu("Help",true)
+            if menu_item("About this software","",true)
+                about->show()
             end
-            text(status)
-            if button("Refresh List")
+            end_menu()
+        end
+        if menu_item("Exit","Esc",true)
+            confirm->show()
+        end
+    end
+    function confirm_on_close_handle(arg)
+        if arg
+            system.exit(0)
+        end
+        return false
+    end
+    function on_close_handle(arg)
+        confirm->show()
+        arg=true
+        return false
+    end
+    function initialize() override
+        load()
+        this.win_flags.push_back(flags.menu_bar)
+        this.title="Cspkg"
+        this.on_close.add_listener(on_close_handle)
+        confirm->title="Confirm"
+        confirm->question="Do you want to exit?"
+        confirm->on_close.add_listener(confirm_on_close_handle)
+    end
+    function on_layout() override
+        var info=packages.at(select)
+        text(status)
+        list_box("##list",select,items)
+        if begin_popup_item("list")
+            if menu_item("Refresh","",true)
                 load()
             end
-            if button("Install New")
-                install.win_opened=true
-                install.read_path()
+            if begin_menu("Property",true)
+                if info->type=="cse"
+                    menu_item("CovScript Extension","",false)
+                else
+                    menu_item("CovScript Package","",false)
+                end
+                menu_item("Name: "+info->name,"",false)
+                end_menu()
             end
-            if button("Uninstall")
-                show_uninstall=true
+            if menu_item("Uninstall","",true)
+                uninstall->show()
             end
-        end_window()
-        if show_confirm
-            confirm()
+            end_popup()
         end
-        if show_about
-            about()
+        if info->type=="cse"
+            text("CovScript Extension")
+        else
+            text("CovScript Package")
         end
-        if install_confirm.is_opened()
-            install_confirm.render()
+        text("Name: "+info->name)
+        spacing()
+    end
+    function on_draw() override
+        if begin_menu_bar()
+            menu()
+            end_menu_bar()
         end
-        if install.is_opened()
-            install.render()
+        if begin_popup_window()
+            menu()
+            end_popup()
         end
-        if show_uninstall
-            uninstall()
+        if button("Refresh List")
+            load()
         end
-        app.render()
+        same_line()
+        if button("Install New")
+            install->show()
+            install->read_path()
+        end
+        same_line()
+        if button("Uninstall")
+            uninstall->show()
+        end
+    end
+end
+struct gui_activity extends picasso.base_activity
+    var win=gcnew gui_window
+    function on_start_handle(arg) override
+        style_color_light()
+        return false
+    end
+    function on_present_handle(arg) override
+        if is_key_pressed(get_key_index(keys.escape))
+            win->confirm->show()
+        end
+        return false
+    end
+    function initialize() override
+        this.title="CovScript Package Manager"
+        win->install->gui=win
+        win->uninstall->gui=win
+        win->show()
+        this.add_window(win)
+        this.add_window(win->confirm)
+        this.add_window(win->about)
+        this.add_window(win->install)
+        this.add_window(win->install->confirm_inst)
+        this.add_window(win->uninstall)
+        this.on_start.add_listener(on_start_handle)
+        this.on_present.add_listener(on_present_handle)
     end
 end
 function answer(question)
@@ -351,7 +348,7 @@ switch system.args.at(1)
         end
     end
     case "--gui"
-        gui()
+        (new gui_activity).start()
     end
     case "--help"
 @begin
