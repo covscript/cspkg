@@ -5,6 +5,6 @@
 
 Running `cspkg` requires CovScript version higher than `20180201`.
 
-You can also start **cspkg** in the CovScript IDE by clicking `Tools | CovScript | Start Cspkg GUI`:
+You can also start **cspkg** in the [CovScript IDE](https://plugins.jetbrains.com/plugin/10326-covscript) by clicking `Tools | CovScript | Start Cspkg GUI`:
 
 ![](https://plugins.jetbrains.com/files/10326/screenshot_17905.png)
