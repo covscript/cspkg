@@ -1,6 +1,4 @@
 #!/usr/bin/env cs
-import picasso
-using picasso.imgui
 struct package_info
     var name=null
     var type=null
@@ -24,6 +22,10 @@ function get_file_name(path)
     end
 end
 var path=runtime.get_import_path().split({system.path.delimiter}).back()
+function gui()
+var ext_name="picasso"
+var picasso=context.dynamic_import(runtime.get_import_path(),ext_name)
+using picasso.imgui
 # About Window
 struct about_win extends picasso.message_box
     function initialize() override
@@ -249,6 +251,8 @@ struct gui_activity extends picasso.base_activity
         this.on_present.add_listener(on_present_handle)
     end
 end
+(new gui_activity).start()
+end
 function answer(question)
     loop
         system.out.println(question+"(y/n)")
@@ -348,7 +352,7 @@ switch system.args.at(1)
         end
     end
     case "--gui"
-        (new gui_activity).start()
+        gui()
     end
     case "--help"
 @begin

@@ -4,3 +4,5 @@
 *.log
 # ImGui INI
 imgui.ini
+# IDEA Files
+.idea/
