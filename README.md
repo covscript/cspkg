@@ -3,7 +3,7 @@
 **cspkg** is a GUI package manager tool belonging to the Covariant Script Programming Language project.  
 **cspkg** is written in CovScript.
 
-Running `cspkg` requires CovScript version higher than `20180201`.
+Running `cspkg` requires CovScript Standard version higher than `20190101`.
 
 You can also start **cspkg** in the [CovScript IDE](https://plugins.jetbrains.com/plugin/10326-covscript) by clicking `Tools | CovScript | Start Cspkg GUI`:
 
