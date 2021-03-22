@@ -203,6 +203,7 @@ function cspkg_log(msg)
 end
 
 class graph
+    var minimal_deps = {"codec", "process", "regex", "curl"}
     var local_packages = new hash_map
     function read_packages()
         local_packages = utils.open_json(config.compose_packages())
