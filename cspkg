@@ -70,7 +70,7 @@ namespace utils
         end
     end
     function http_get_file(url, path)
-        var ofs = iostream.ofstream(path)
+        var ofs = iostream.fstream(path, iostream.openmode.bin_out)
         if !ofs.good()
             return false
         end
