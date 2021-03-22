@@ -33,7 +33,7 @@ import process
 namespace utils
     function open_json(path)
         var ifs = iostream.ifstream(path)
-        return json.to_var(json.from_stream(path))
+        return json.to_var(json.from_stream(ifs))
     end
     function filter(str, cond)
         var _s = ""
@@ -104,49 +104,96 @@ end
 namespace config
     constant version = "2.0"
     @begin
-    var content = {
+    var default_content = {
         "arch" : env.arch(),
         "home" : env.covscript_home(),
         "timeout_ms" : 1000,
-        "sources" : {
-            "https://raw.githubusercontent.com/covscript/cspkg-sources/main/index.json"
-        }
+        "source" : "https://raw.githubusercontent.com/covscript/cspkg-sources/main/index.json"
     }.to_hash_map()
     @end
+    var content = null
     function compose_home()
-        return env.user_home() + ".cspkg"
+        return env.user_home() + system.path.separator + ".cspkg"
     end
     function compose_log()
-        return env.user_home() + ".cspkg" + system.path.separator + "cspkg.log"
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.log"
     end
     function compose_config()
-        return env.user_home() + ".cspkg" + system.path.separator + "config.json"
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "config.json"
     end
     function compose_packages()
-        return env.user_home() + ".cspkg" + system.path.separator + "packages.json"
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "packages.json"
+    end
+    function save()
+        var ofs = iostream.ofstream(config.compose_config())
+        ofs.print(json.to_string(json.from_var(config.content)))
     end
     function create()
-
+        system.file.mkdir(config.compose_home())
+        if !system.file.exists(config.compose_config())
+            config.save()
+        end
     end
     function init()
-        if !system.file.exists(compose_home()) || !system.file.exists(compose_config()) || !system.file.exists(compose_packages())
-            create()
+        if !system.file.exists(config.compose_config())
+            config.content = config.default_content
+            config.create()
         else
+            config.content = utils.open_json(config.compose_config())
+        end
+    end
+end
 
+namespace log_impl
+    var log = null
+    function open_log()
+        if log_impl.log == null
+            system.file.mkdir(config.compose_home())
+            log_impl.log = iostream.fstream(config.compose_log(), iostream.openmode.app)
         end
     end
 end
 
 function cspkg_log(msg)
+    log_impl.open_log()
     system.out.println(msg)
-    # Write log here
+    log_impl.log.println(msg)
 end
 
 # Command Line Parser
 
 class cspkg_config
     function run(opt, args)
+        if args.size != 1
+            cspkg_log("cspkg: wrong arguments for config command.\n")
+            system.exit(0)
+        end
         config.init()
+        if !config.content.exist(args[0])
+            cspkg_log("cspkg: key \'" + args[0] + "\' does not exists.\n")
+            system.exit(0)
+        end
+        if !opt.empty()
+            switch opt[0]
+                case "--set"
+                    if opt.size != 2
+                        cspkg_log("cspkg: wrong arguments for config --set command.\n")
+                        system.exit(0)
+                    end
+                    config.content[args[0]] = opt[1]
+                    config.save()
+                end
+                case "--unset"
+                    if opt.size != 1
+                        cspkg_log("cspkg: wrong arguments for config --unset command.\n")
+                        system.exit(0)
+                    end
+                    config.content[args[0]] = config.default_content[args[0]]
+                    config.save()
+                end
+            end
+        end
+        system.out.println(args[0] + " = " + config.content[args[0]])
     end
 end
 
@@ -157,11 +204,11 @@ end
 function show_help(opt, args)
 @begin
     system.out.println(
-        "Usage: cspkg <commands> [options] ...\n" +
+        "Usage: cspkg <commands> ... [options] ...\n" +
         "\nCommands:\n" +
         "    install   | -i  <Package>...  Install packages from remote source\n" +
         "    remove    | -r  <Package>...  Remove packages\n" +
-        "    config    | -c                Manage local configuration\n" +
+        "    config    | -c  <Key>         Manage local configuration\n" +
         "    upgrade   | -u                Upgrade local packages\n" +
         "    clean     | -x                Automatically remove useless packages\n" +
         "    list      | -l                List current packages\n" +
@@ -169,10 +216,8 @@ function show_help(opt, args)
         "    version   | -v                Show version information\n" +
         "\nOptions:\n" +
         "    --local   <Path>              Install from local source(will treat target field as local path)\n" +
-        "    --set     <Key> <Value>       Set a configuration key\n" +
-        "    --unset   <Key>               Restore a configuration key to default\n" +
-        "    --merge   <Path>              Merge a json file into cspkg configuration\n" +
-        "    --export  <Path>              Export cspkg configuration into a json file\n"
+        "    --set     <Value>             Set a configuration key\n" +
+        "    --unset                       Restore a configuration key to default\n"
     )
 @end
 end
@@ -191,11 +236,7 @@ function show_version(opt, args)
 end
 
 function command_error(cmd)
-@begin
-    system.out.println(
-        "cspkg: \'" + cmd + "\' is not a cspkg command. See \'csman help\'\n"
-    )
-@end
+    cspkg_log("cspkg: \'" + cmd + "\' is not a cspkg command. See \'csman help\'\n")
 end
 
 var cmd_args = context.cmd_args
@@ -231,15 +272,15 @@ end
 block
     var idx = 2
     while idx != cmd_args.size
-        if cmd_args[idx].find("--", 0) == 0
-            cspkg_options.push_back(cmd_args[idx])
+        if cmd_args[idx].find("--", 0) != 0
+            cspkg_args.push_back(cmd_args[idx])
         else
             break
         end
         ++idx
     end
     while idx != cmd_args.size
-        cspkg_args.push_back(cmd_args[idx])
+        cspkg_options.push_back(cmd_args[idx])
         ++idx
     end
 end

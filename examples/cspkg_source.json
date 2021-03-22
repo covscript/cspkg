@@ -1,9 +1,0 @@
-{
-    "target": "cspkg_source",
-    "platform": {
-        "unive": "unive.json",
-        "win32": "win32.json",
-        "linux": "linux.json",
-        "macos": "macos.json"
-    }
-}
