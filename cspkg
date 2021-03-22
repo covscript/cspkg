@@ -30,12 +30,17 @@
 
 import codec.json as json
 import process
+import regex
 import curl
 
 namespace utils
     function open_json(path)
         var ifs = iostream.ifstream(path)
         return json.to_var(json.from_stream(ifs))
+    end
+    function save_json(val, path)
+        var ofs = iostream.ofstream(path)
+        ofs.print(json.to_string(json.from_var(val)))
     end
     function filter(str, cond)
         var _s = ""
@@ -51,7 +56,6 @@ namespace utils
         var session = curl.make_session_os(buff.get_ostream())
         session.set_url(url)
         if config.content.exist("proxy")
-            cspkg_log("cspkg: using proxy " + config.content.proxy + "\n")
             session.set_proxy(config.content.proxy)
         end
         session.set_ssl_verify_host(false)
@@ -73,7 +77,6 @@ namespace utils
         var session = curl.make_session_os(ofs)
         session.set_url(url)
         if config.content.exist("proxy")
-            cspkg_log("cspkg: using proxy " + config.content.proxy + "\n")
             session.set_proxy(config.content.proxy)
         end
         session.set_ssl_verify_host(false)
@@ -165,8 +168,7 @@ namespace config
         return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "packages.json"
     end
     function save()
-        var ofs = iostream.ofstream(config.compose_config())
-        ofs.print(json.to_string(json.from_var(config.content)))
+        utils.save_json(config.content, config.compose_config())
     end
     function create()
         system.file.mkdir(config.compose_home())
@@ -202,11 +204,17 @@ end
 
 # Command Line Parser
 
+function draw_separator()
+    for i = 1, i <= system.console.terminal_width(), ++i
+        system.out.print("-")
+    end
+    system.out.println("")
+end
+
 class cspkg_install
+    var package_list = new hash_map
     var package_info = new hash_map
-    function run(opt, args)
-        config.init()
-        system.out.println("Fetching " + config.content.source + "...")
+    function fetch_source()
         var source = utils.http_get(config.content.source)
         if source == null || source.empty()
             cspkg_log("cspkg: timeout when fetching source.\n")
@@ -215,9 +223,10 @@ class cspkg_install
         source = json.to_var(json.from_string(source))
         if source.exist("universal")
             var url = source.base_url + source.universal
-            system.out.println("Fetching " + url + "...")
             var uni_source = utils.http_get(url)
-            if uni_source != null
+            if uni_source != null && !uni_source.empty()
+                uni_source = json.to_var(json.from_string(uni_source))
+                foreach it in uni_source do package_list.insert(it.first, it.second)
             else
                 cspkg_log("cspkg: timeout when fetching universal source.\n")
             end
@@ -225,9 +234,16 @@ class cspkg_install
         if source.exist(env.platform())
             if source[env.platform()].exist(config.content.arch)
                 var url = source.base_url + source[env.platform()][config.content.arch]
-                system.out.println("Fetching " + url + "...")
                 var os_source = utils.http_get(url)
-                if os_source != null
+                if os_source != null && !os_source.empty()
+                    os_source = json.to_var(json.from_string(os_source))
+                    foreach it in os_source
+                        if package_list.exist(it.first)
+                            cspkg_log("cspkg: package index \'" + it.first + "\' existing, skipping...\n")
+                        else
+                            package_list.insert(it.first, it.second)
+                        end
+                    end
                 else
                     cspkg_log("cspkg: timeout when fetching platform source.\n")
                 end
@@ -236,6 +252,50 @@ class cspkg_install
             end
         else
             cspkg_log("cspkg: target source does not support current OS \'" + env.platform() + "\'.\n")
+        end
+    end
+    function run(opt, args)
+        config.init()
+        fetch_source()
+        if !opt.empty()
+            switch opt[0]
+                default
+                    cspkg_log("cspkg: unknown option for install: \'" + opt[0] + "\'.\n")
+                    system.exit(0)
+                end
+                case "--import"
+                    if opt.size != 1
+                        cspkg_log("cspkg: wrong arguments for install --import command.\n")
+                        system.exit(0)
+                    end
+                    var p = system.path.scan(env.covscript_home() + system.path.separator + "imports")
+                    var reg = regex.build("^(.*)\\.(cse|csp)$")
+                    foreach it in p
+                        if it.type == system.path.type.reg
+                            var name = it.name
+                            var r = reg.match(name)
+                            if !r.empty()
+                                name = r.str(1)
+                                if package_list.exist(name)
+                                    var info = utils.http_get(package_list.at(name))
+                                    if info == null || info.empty()
+                                        cspkg_log("cspkg: timeout when fetching package information: \'" + it.name + "\'.\n")
+                                    else
+                                        info = json.to_var(json.from_string(info))
+                                        package_info.insert(name, info)
+                                        cspkg_log("cspkg: found " + info.Info + "(" + info.Version + ")\n")
+                                    end
+                                else
+                                    cspkg_log("cspkg: can not find corresponding package information: \'" + it.name + "\'.\n")
+                                end
+                            end
+                        end
+                    end
+                    utils.save_json(package_info, config.compose_packages())
+                end
+            end
+        else
+
         end
     end
 end
@@ -257,6 +317,10 @@ class cspkg_config
         end
         if !opt.empty()
             switch opt[0]
+                default
+                    cspkg_log("cspkg: unknown option for config: \'" + opt[0] + "\'.\n")
+                    system.exit(0)
+                end
                 case "--set"
                     if opt.size != 2
                         cspkg_log("cspkg: wrong arguments for config --set command.\n")
@@ -283,6 +347,46 @@ function run_config(opt, args)
     (new cspkg_config).run(opt, args)
 end
 
+function list_packages(opt, args)
+    if system.file.exists(config.compose_packages())
+        var packages = utils.open_json(config.compose_packages())
+        system.out.println("Installed Packages")
+        draw_separator()
+        var max_size_c0 = 0
+        foreach it in packages
+            if it.first.size > max_size_c0
+                max_size_c0 = it.first.size
+            end
+        end
+        system.out.print("Name")
+        foreach i in range(max_size_c0) do system.out.print(" ")
+        var max_size_c1 = 0
+        foreach it in packages
+            if it.second.Version.size > max_size_c1
+                max_size_c1 = it.second.Version.size
+            end
+        end
+        system.out.print("Version")
+        if max_size_c1 < 7
+            max_size_c1 = 11
+        end
+        foreach i in range(max_size_c1 - 7) do system.out.print(" ")
+        system.out.println("Description")
+        draw_separator()
+        foreach it in packages
+            system.out.print(it.first)
+            foreach i in range(max_size_c0 - it.first.size) do system.out.print(" ")
+            system.out.print("    ")
+            system.out.print(it.second.Version)
+            foreach i in range(max_size_c0 - it.second.Version.size - 7) do system.out.print(" ")
+            system.out.print("    ")
+            system.out.println(it.second.Info)
+        end
+    else
+        cspkg_log("cspkg: can not find package information. try \'cspkg install --import\'\n")
+    end
+end
+
 function show_help(opt, args)
 @begin
     system.out.println(
@@ -297,7 +401,7 @@ function show_help(opt, args)
         "    help      | -h                Show help information\n" +
         "    version   | -v                Show version information\n" +
         "\nOptions:\n" +
-        "    --local   <Path>              Install from local source(will treat target field as local path)\n" +
+        "    --import                      scanning local CovScript packages\n" +
         "    --set     <Value>             Set a configuration key\n" +
         "    --unset                       Restore a configuration key to default\n"
     )
@@ -318,7 +422,7 @@ function show_version(opt, args)
 end
 
 function command_error(cmd)
-    cspkg_log("cspkg: \'" + cmd + "\' is not a cspkg command. See \'csman help\'\n")
+    cspkg_log("cspkg: \'" + cmd + "\' is not a cspkg command. see \'csman help\'\n")
 end
 
 var cmd_args = context.cmd_args
@@ -334,6 +438,8 @@ var cspkg_cmds = {
     "-i" : run_install,
     "config" : run_config,
     "-c" : run_config,
+    "list" : list_packages,
+    "-l" : list_packages,
     "help" : show_help,
     "-h" : show_help,
     "version" : show_version,
