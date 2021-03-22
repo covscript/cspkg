@@ -107,7 +107,7 @@ namespace config
     var default_content = {
         "arch" : env.arch(),
         "home" : env.covscript_home(),
-        "timeout_ms" : 1000,
+        "timeout_ms" : "1000",
         "source" : "https://raw.githubusercontent.com/covscript/cspkg-sources/main/index.json"
     }.to_hash_map()
     @end
