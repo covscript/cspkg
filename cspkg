@@ -202,6 +202,29 @@ function cspkg_log(msg)
     log_impl.log.println(msg)
 end
 
+class graph
+    var local_packages = new hash_map
+    function read_packages()
+        local_packages = utils.open_json(config.compose_packages())
+    end
+    # Return array of lacking packages(for install --import)
+    function check_consistency()
+
+    end
+    # Return array of lacking packages(for install)
+    function get_dependencies(arr)
+
+    end
+    # Return array of supporting packages(for remove)
+    function get_supports(arr)
+
+    end
+    # Return array of useless packages(for clean)
+    function get_useless()
+
+    end
+end
+
 # Command Line Parser
 
 function draw_separator()
