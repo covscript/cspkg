@@ -203,25 +203,113 @@ function cspkg_log(msg)
 end
 
 class graph
-    var local_packages = new hash_map
-    function read_packages()
-        local_packages = utils.open_json(config.compose_packages())
+    var edge = new array, indegree = new hash_map, outdegree = new hash_map, master = new hash_set
+    var vis = new hash_map
+    function initialize()
+        edge[0] = new hash_map
+        edge[1] = new hash_map
     end
-    # Return array of lacking packages(for install --import)
-    function check_consistency()
+    
+    function add_edge(pac, dep) # pac -> dep
+        if !edge[0].exist(pac)
+            edge[0][pac] = new hash_set
+        end
+        if !edge[1].exist(dep)
+            edge[1][dep] = new hash_set
+        end
+        
+        edge[0][pac].insert(dep)
+        edge[1][dep].insert(pac)
 
+        if(!outdegree.exist(pac))
+            outdegree[pac] = 0
+        end
+        if(!indegree.exist(dep))
+            indegree[dep] = 0
+        end
+        outdegree[pac]++
+        indegree[dep]++
     end
-    # Return array of lacking packages(for install)
-    function get_dependencies(arr)
 
+    function del_node(node)
+        if(!edge[0].exist(node))
+            return
+        end
+        foreach x in edge[0][node]
+            indegree[x]--
+            edge[1][x].erase(node)
+        end
+        edge[0][node].clear()
+        outdegree[node] = 0
+        if master.exist(node)
+            master.erase(node)
+        end
     end
-    # Return array of supporting packages(for remove)
-    function get_supports(arr)
 
+    function dfs(node, flag)
+        var res = new hash_set
+        if(vis.exist(node) && vis[node]==true)
+            return res
+        end
+        vis[node] = true
+        res.insert(node)
+        
+        if edge[to_integer(flag)].exist(node)
+            foreach x in edge[to_integer(flag)].at(node)
+                res = hash_set.merge(res,dfs(x,flag))
+            end
+        end
+        
+        return res
     end
-    # Return array of useless packages(for clean)
+
+    function get_dependencies(nodes)
+        vis.clear()
+        if type(nodes) == "array"
+            out.println(type(res))
+            var res = new hash_set
+            foreach x in nodes do hash_set.merge(res,dfs(x,false))
+            return res
+        end
+
+        if type(nodes) == "set"
+            var res = new hash_set
+            foreach x in nodes do hash_set.merge(res,dfs(x,false))
+            return res
+        end
+
+        return dfs(nodes,false)
+    end
+
+    function get_supports(nodes)
+        vis.clear()
+        if type(nodes) == "array"
+            var res = new hash_set
+            foreach x in nodes do hash_set.merge(res,dfs(x,false))
+            return res
+        end
+
+        if type(nodes) == "set"
+            var res = new hash_set
+            foreach x in nodes do hash_set.merge(res,dfs(x,false))
+            return res
+        end
+
+        return dfs(nodes,false)
+    end
+
     function get_useless()
+        var res = new hash_set
+        foreach x in outdegree
+            if x.second == 0 && !master.exist(x.first) # not master
+                res.insert(x.first)
+            end
+        end
+        return res
+    end
 
+    function set_master(pac_name)
+        master.insert(pac_name)
     end
 end
 
