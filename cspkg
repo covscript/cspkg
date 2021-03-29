@@ -106,7 +106,7 @@ namespace env
         if system.is_platform_linux()
             return "/usr/share/covscript"
         end
-        if system.is_platform_macos()
+        if system.is_platform_darwin()
             return "/Applications/CovScript.app/Contents/MacOS/covscript"
         end
     end
@@ -117,7 +117,7 @@ namespace env
         if system.is_platform_linux()
             return "linux"
         end
-        if system.is_platform_macos()
+        if system.is_platform_darwin()
             return "macos"
         end
     end
