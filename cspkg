@@ -222,10 +222,10 @@ class graph
         edge[0][pac].insert(dep)
         edge[1][dep].insert(pac)
 
-        if(!outdegree.exist(pac))
+        if !outdegree.exist(pac)
             outdegree[pac] = 0
         end
-        if(!indegree.exist(dep))
+        if !indegree.exist(dep)
             indegree[dep] = 0
         end
         outdegree[pac]++
@@ -233,7 +233,7 @@ class graph
     end
 
     function del_node(node)
-        if(!edge[0].exist(node))
+        if !edge[0].exist(node)
             return
         end
         foreach x in edge[0][node]
@@ -249,54 +249,48 @@ class graph
 
     function dfs(node, flag)
         var res = new hash_set
-        if(vis.exist(node) && vis[node]==true)
+        if vis.exist(node) && vis[node] == true
             return res
         end
         vis[node] = true
         res.insert(node)
-        
         if edge[to_integer(flag)].exist(node)
             foreach x in edge[to_integer(flag)].at(node)
-                res = hash_set.merge(res,dfs(x,flag))
+                res = hash_set.merge(res, dfs(x, flag))
             end
         end
-        
         return res
     end
 
     function get_dependencies(nodes)
         vis.clear()
-        if type(nodes) == "array"
-            out.println(type(res))
+        if typeid nodes == typeid array
             var res = new hash_set
-            foreach x in nodes do hash_set.merge(res,dfs(x,false))
+            foreach x in nodes do hash_set.merge(res, dfs(x, false))
             return res
         end
-
-        if type(nodes) == "set"
+        if typeid nodes == typeid hash_set
             var res = new hash_set
-            foreach x in nodes do hash_set.merge(res,dfs(x,false))
+            foreach x in nodes do hash_set.merge(res, dfs(x, false))
             return res
         end
-
-        return dfs(nodes,false)
+        return dfs(nodes, false)
     end
 
     function get_supports(nodes)
         vis.clear()
-        if type(nodes) == "array"
+        if typeid nodes == typeid array
             var res = new hash_set
-            foreach x in nodes do hash_set.merge(res,dfs(x,false))
+            foreach x in nodes do hash_set.merge(res, dfs(x, false))
             return res
         end
 
-        if type(nodes) == "set"
+        if typeid nodes == typeid hash_set
             var res = new hash_set
-            foreach x in nodes do hash_set.merge(res,dfs(x,false))
+            foreach x in nodes do hash_set.merge(res, dfs(x, false))
             return res
         end
-
-        return dfs(nodes,false)
+        return dfs(nodes, false)
     end
 
     function get_useless()
@@ -312,11 +306,6 @@ class graph
     function set_master(pac_name)
         master.insert(pac_name)
     end
-end
-
-class package_utils
-    var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
-    
 end
 
 # Command Line Parser
