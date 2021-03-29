@@ -464,7 +464,7 @@ end
 
 function list_packages(opt, args)
     if system.file.exists(config.compose_packages())
-        var packages = utils.open_json(config.compose_packages())
+        var packages = config.check_local_packages()
         block
             var oldt = packages
             packages = new array
