@@ -155,6 +155,7 @@ namespace config
     }.to_hash_map()
     @end
     var content = null
+    var cancel_prompt = false
     function compose_home()
         return env.user_home() + system.path.separator + ".cspkg"
     end
@@ -412,14 +413,16 @@ class cspkg_install
                 foreach it in oldt do deps_set.push_back(it)
                 deps_set.sort([](a, b)->a < b)
             end
-            system.out.println("Following packages will be installed:")
-            foreach it in deps_set
-                system.out.println("\t" + it)
-            end
-            system.out.println("\nDo you want to continue?[y/n]")
-            if system.console.getch().tolower() != 'y'
-                cspkg_log("cspkg: installation canceled.\n")
-                system.exit(0)
+            if !config.cancel_prompt
+                system.out.println("Following packages will be installed:")
+                foreach it in deps_set
+                    system.out.println("\t" + it)
+                end
+                system.out.println("\nDo you want to continue?[y/n]")
+                if system.console.getch().tolower() != 'y'
+                    cspkg_log("cspkg: installation canceled.\n")
+                    system.exit(0)
+                end
             end
             foreach it in deps_set
                 link info = deps_cache[it]
@@ -451,14 +454,16 @@ class cspkg_upgrade extends cspkg_install
             cspkg_log("cspkg: no packages need to be upgrade.\n")
             return
         end
-        system.out.println("Following packages will be upgraded:")
-        foreach it in this.deps_cache
-            system.out.println("\t" + it.first + "(" + this.local_pac[it.first].Version + " -> " + it.second.Version + ")")
-        end
-        system.out.println("\nDo you want to continue?[y/n]")
-        if system.console.getch().tolower() != 'y'
-            cspkg_log("cspkg: upgrade canceled.\n")
-            system.exit(0)
+        if !config.cancel_prompt
+            system.out.println("Following packages will be upgraded:")
+            foreach it in this.deps_cache
+                system.out.println("\t" + it.first + "(" + this.local_pac[it.first].Version + " -> " + it.second.Version + ")")
+            end
+            system.out.println("\nDo you want to continue?[y/n]")
+            if system.console.getch().tolower() != 'y'
+                cspkg_log("cspkg: upgrade canceled.\n")
+                system.exit(0)
+            end
         end
         foreach pac in this.deps_cache
             link info = pac.second
@@ -588,7 +593,8 @@ function show_help(opt, args)
         "\nOptions:\n" +
         "    --import                      scanning local CovScript packages\n" +
         "    --set     <Value>             Set a configuration key\n" +
-        "    --unset                       Restore a configuration key to default\n"
+        "    --unset                       Restore a configuration key to default\n" +
+        "    --yes                         Cancel the prompt"
     )
 @end
 end
@@ -657,7 +663,11 @@ block
         ++idx
     end
     while idx != cmd_args.size
-        cspkg_options.push_back(cmd_args[idx])
+        if cmd_args[idx] == "--yes"
+            config.cancel_prompt = true
+        else
+            cspkg_options.push_back(cmd_args[idx])
+        end
         ++idx
     end
 end
