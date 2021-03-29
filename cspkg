@@ -397,6 +397,24 @@ class cspkg_install
                             end
                         end
                     end
+                    var deps_set = new hash_set
+                    foreach pac in package_info
+                        foreach dep in pac.second.Dependencies
+                            deps_set.insert(dep)
+                        end
+                    end
+                    foreach pac in package_info
+                        if deps_set.exist(pac.first)
+                            deps_set.erase(pac.first)
+                        end
+                    end
+                    if !deps_set.empty()
+                        cspkg_log("cspkg: dependencies not completed, required:")
+                        foreach it in deps_set
+                            cspkg_log("\t" + it)
+                        end
+                        cspkg_log("\n")
+                    end
                     utils.save_json(package_info, config.compose_packages())
                 end
             end
@@ -456,6 +474,14 @@ end
 function list_packages(opt, args)
     if system.file.exists(config.compose_packages())
         var packages = utils.open_json(config.compose_packages())
+        block
+            var oldt = packages
+            packages = new array
+            foreach it in oldt
+                packages.push_back(it)
+            end
+            packages.sort([](a, b)->a.first < b.first)
+        end
         system.out.println("Installed Packages")
         draw_separator()
         var max_size_c0 = 0
