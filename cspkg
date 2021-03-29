@@ -70,7 +70,7 @@ namespace utils
         end
     end
     function http_get_file(url, path)
-        var ofs = iostream.ofstream(path)
+        var ofs = iostream.fstream(path, iostream.openmode.bin_out)
         if !ofs.good()
             return false
         end
@@ -205,11 +205,12 @@ end
 class graph
     var edge = new array, indegree = new hash_map, outdegree = new hash_map, master = new hash_set
     var vis = new hash_map
+
     function initialize()
         edge[0] = new hash_map
         edge[1] = new hash_map
     end
-    
+
     function add_edge(pac, dep) # pac -> dep
         if !edge[0].exist(pac)
             edge[0][pac] = new hash_set
@@ -311,6 +312,11 @@ class graph
     function set_master(pac_name)
         master.insert(pac_name)
     end
+end
+
+class package_utils
+    var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
+    
 end
 
 # Command Line Parser
