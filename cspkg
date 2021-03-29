@@ -638,9 +638,9 @@ function list_packages(opt, args)
         end
         system.out.print("Version")
         if max_size_c1 < 7
-            max_size_c1 = 11
+            max_size_c1 = 7
         end
-        foreach i in range(max_size_c1 - 7) do system.out.print(" ")
+        foreach i in range(max_size_c1 - 3) do system.out.print(" ")
         system.out.println("Description")
         draw_separator()
         foreach it in packages
@@ -648,7 +648,7 @@ function list_packages(opt, args)
             foreach i in range(max_size_c0 - it.first.size) do system.out.print(" ")
             system.out.print("    ")
             system.out.print(it.second.Version)
-            foreach i in range(max_size_c0 - it.second.Version.size - 7) do system.out.print(" ")
+            foreach i in range(max_size_c1 - it.second.Version.size) do system.out.print(" ")
             system.out.print("    ")
             system.out.println(it.second.Info)
         end
