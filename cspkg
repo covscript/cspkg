@@ -184,6 +184,36 @@ namespace config
             config.content = utils.open_json(config.compose_config())
         end
     end
+    function check_local_packages()
+        if !system.file.exists(config.compose_packages())
+            return new hash_map
+        end
+        var packages = utils.open_json(config.compose_packages())
+        var local_pac = new hash_map
+        var p = system.path.scan(env.covscript_home() + system.path.separator + "imports")
+        var reg = regex.build("^(.*)\\.(cse|csp)$")
+        foreach it in p
+            if it.type == system.path.type.reg
+                var name = it.name
+                var r = reg.match(name)
+                if !r.empty()
+                    name = r.str(1)
+                    if packages.exist(name)
+                        local_pac.insert(name, packages[name])
+                    else
+                        cspkg_log("cspkg: unknown local package \'" + name + "\'. try cspkg install --import\n")
+                    end
+                end
+            end
+        end
+        foreach it in packages
+            if !local_pac.exist(it.first)
+                cspkg_log("cspkg: local record of package \'" + it.first + "\' was removed when checking data consistency.\n")
+            end
+        end
+        utils.save_json(local_pac, config.compose_packages())
+        return local_pac
+    end
 end
 
 namespace log_impl
@@ -202,112 +232,6 @@ function cspkg_log(msg)
     log_impl.log.println(msg)
 end
 
-class graph
-    var edge = new array, indegree = new hash_map, outdegree = new hash_map, master = new hash_set
-    var vis = new hash_map
-
-    function initialize()
-        edge[0] = new hash_map
-        edge[1] = new hash_map
-    end
-
-    function add_edge(pac, dep) # pac -> dep
-        if !edge[0].exist(pac)
-            edge[0][pac] = new hash_set
-        end
-        if !edge[1].exist(dep)
-            edge[1][dep] = new hash_set
-        end
-        
-        edge[0][pac].insert(dep)
-        edge[1][dep].insert(pac)
-
-        if !outdegree.exist(pac)
-            outdegree[pac] = 0
-        end
-        if !indegree.exist(dep)
-            indegree[dep] = 0
-        end
-        outdegree[pac]++
-        indegree[dep]++
-    end
-
-    function del_node(node)
-        if !edge[0].exist(node)
-            return
-        end
-        foreach x in edge[0][node]
-            indegree[x]--
-            edge[1][x].erase(node)
-        end
-        edge[0][node].clear()
-        outdegree[node] = 0
-        if master.exist(node)
-            master.erase(node)
-        end
-    end
-
-    function dfs(node, flag)
-        var res = new hash_set
-        if vis.exist(node) && vis[node] == true
-            return res
-        end
-        vis[node] = true
-        res.insert(node)
-        if edge[to_integer(flag)].exist(node)
-            foreach x in edge[to_integer(flag)].at(node)
-                res = hash_set.merge(res, dfs(x, flag))
-            end
-        end
-        return res
-    end
-
-    function get_dependencies(nodes)
-        vis.clear()
-        if typeid nodes == typeid array
-            var res = new hash_set
-            foreach x in nodes do hash_set.merge(res, dfs(x, false))
-            return res
-        end
-        if typeid nodes == typeid hash_set
-            var res = new hash_set
-            foreach x in nodes do hash_set.merge(res, dfs(x, false))
-            return res
-        end
-        return dfs(nodes, false)
-    end
-
-    function get_supports(nodes)
-        vis.clear()
-        if typeid nodes == typeid array
-            var res = new hash_set
-            foreach x in nodes do hash_set.merge(res, dfs(x, false))
-            return res
-        end
-
-        if typeid nodes == typeid hash_set
-            var res = new hash_set
-            foreach x in nodes do hash_set.merge(res, dfs(x, false))
-            return res
-        end
-        return dfs(nodes, false)
-    end
-
-    function get_useless()
-        var res = new hash_set
-        foreach x in outdegree
-            if x.second == 0 && !master.exist(x.first) # not master
-                res.insert(x.first)
-            end
-        end
-        return res
-    end
-
-    function set_master(pac_name)
-        master.insert(pac_name)
-    end
-end
-
 # Command Line Parser
 
 function draw_separator()
@@ -320,6 +244,8 @@ end
 class cspkg_install
     var package_list = new hash_map
     var package_info = new hash_map
+    var deps_cache = null
+    var deps_set = null
     function fetch_source()
         var source = utils.http_get(config.content.source)
         if source == null || source.empty()
@@ -359,6 +285,20 @@ class cspkg_install
         else
             cspkg_log("cspkg: target source does not support current OS \'" + env.platform() + "\'.\n")
         end
+    end
+    function find_deps(pac)
+        if deps_set.exist(pac)
+            return
+        end
+        var info = utils.http_get(package_list.at(pac))
+        if info == null || info.empty()
+            cspkg_log("cspkg: timeout when fetching package information: \'" + it.name + "\'.\n")
+            return
+        end
+        info = json.to_var(json.from_string(info))
+        foreach deps in info.Dependencies do find_deps(deps)
+        deps_cache.insert(pac, info)
+        deps_set.insert(pac)
     end
     function run(opt, args)
         config.init()
@@ -419,7 +359,58 @@ class cspkg_install
                 end
             end
         else
-
+            var local_pac = config.check_local_packages()
+            deps_cache = new hash_map
+            deps_set = new hash_set
+            foreach it in args
+                if !package_list.exist(it)
+                    cspkg_log("cspkg: package \'" + it + "\' not existed.\n")
+                    continue
+                end
+                if local_pac.exist(it)
+                    cspkg_log("cspkg: package \'" + it + "\' has installed.\n")
+                    continue
+                end
+                find_deps(it)
+            end
+            foreach it in local_pac
+                if deps_set.exist(it.first)
+                    deps_set.erase(it.first)
+                end
+            end
+            if deps_set.empty()
+                cspkg_log("cspkg: no packages need to be installed.\n")
+                return
+            end
+            block
+                var oldt = deps_set
+                deps_set = new array
+                foreach it in oldt do deps_set.push_back(it)
+                deps_set.sort([](a, b)->a < b)
+            end
+            system.out.println("Following packages will be installed:")
+            foreach it in deps_set
+                system.out.println("\t" + it)
+            end
+            system.out.println("\nDo you want to continue?[y/n]")
+            if system.console.getch().tolower() != 'y'
+                cspkg_log("cspkg: installation canceled.\n")
+                system.exit(0)
+            end
+            foreach it in deps_set
+                link info = deps_cache[it]
+                system.out.println("Installing " + info.Info + "...")
+                var reg = regex.build("^.*?(\\w+\\.(cse|csp))$")
+                var r = reg.match(info.Target)
+                if r.empty()
+                    cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".\n")
+                    continue
+                end
+                utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
+                local_pac.insert(it, info)
+                utils.save_json(local_pac, config.compose_packages())
+                cspkg_log("cspkg: package \'" + it + "\' installed successfully.\n")
+            end
         end
     end
 end
