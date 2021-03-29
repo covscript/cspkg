@@ -1,0 +1,8 @@
+{
+    "Name": "test",
+    "Info": "Test Package",
+    "Author": "Anonymous",
+    "Version": "1.0.0",
+    "Target": "URL to your package",
+    "Dependencies": []
+}

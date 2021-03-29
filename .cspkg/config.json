@@ -1,0 +1,6 @@
+{
+    "sources": [
+        "https://raw.githubusercontent.com/covscript/cspkg-sources/main/index.json",
+        "http://csman.info/cspkg/index.json"
+    ]
+}
