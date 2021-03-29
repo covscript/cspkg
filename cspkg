@@ -145,6 +145,7 @@ end
 
 namespace config
     constant version = "2.0"
+    var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
     @begin
     var default_content = {
         "arch" : env.arch(),
@@ -348,6 +349,7 @@ class cspkg_install
                                         cspkg_log("cspkg: timeout when fetching package information: \'" + it.name + "\'.\n")
                                     else
                                         info = json.to_var(json.from_string(info))
+                                        info["FileName"] = it.name
                                         package_info.insert(name, info)
                                         cspkg_log("cspkg: found " + info.Info + "(" + info.Version + ")\n")
                                     end
@@ -407,15 +409,12 @@ class cspkg_install
                 cspkg_log("cspkg: no packages need to be installed.\n")
                 return
             end
-            block
-                var oldt = deps_set
-                deps_set = new array
-                foreach it in oldt do deps_set.push_back(it)
-                deps_set.sort([](a, b)->a < b)
-            end
             if !config.cancel_prompt
+                var sorted_list = new array
+                foreach it in deps_set do sorted_list.push_back(it)
+                sorted_list.sort([](a, b)->a < b)
                 system.out.println("Following packages will be installed:")
-                foreach it in deps_set
+                foreach it in sorted_list
                     system.out.println("\t" + it)
                 end
                 system.out.println("\nDo you want to continue?[y/n]")
@@ -435,6 +434,7 @@ class cspkg_install
                 end
                 utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
                 local_pac.insert(it, info)
+                local_pac[it]["FileName"] = r.str(1)
                 utils.save_json(local_pac, config.compose_packages())
                 cspkg_log("cspkg: package \'" + it + "\' installed successfully.\n")
             end
@@ -455,8 +455,11 @@ class cspkg_upgrade extends cspkg_install
             return
         end
         if !config.cancel_prompt
+            var sorted_list = new array
+            foreach it in this.deps_cache do sorted_list.push_back(it)
+            sorted_list.sort([](a, b)->a.first < b.first)
             system.out.println("Following packages will be upgraded:")
-            foreach it in this.deps_cache
+            foreach it in sorted_list
                 system.out.println("\t" + it.first + "(" + this.local_pac[it.first].Version + " -> " + it.second.Version + ")")
             end
             system.out.println("\nDo you want to continue?[y/n]")
@@ -476,6 +479,7 @@ class cspkg_upgrade extends cspkg_install
             end
             utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
             this.local_pac[pac.first] = info
+            this.local_pac[pac.first]["FileName"] = r.str(1)
             utils.save_json(this.local_pac, config.compose_packages())
             cspkg_log("cspkg: package \'" + pac.first + "\' upgraded successfully.\n")
         end
@@ -486,47 +490,123 @@ function run_upgrade(opt, args)
     (new cspkg_upgrade).run(opt, args)
 end
 
-class cspkg_config
-    function run(opt, args)
-        if args.size != 1
-            cspkg_log("cspkg: wrong arguments for config command.\n")
-            system.exit(0)
-        end
-        config.init()
-        if !config.content.exist(args[0])
-            cspkg_log("cspkg: key \'" + args[0] + "\' does not exists.\n")
-            system.exit(0)
-        end
-        if !opt.empty()
-            switch opt[0]
-                default
-                    cspkg_log("cspkg: unknown option for config: \'" + opt[0] + "\'.\n")
-                    system.exit(0)
-                end
-                case "--set"
-                    if opt.size != 2
-                        cspkg_log("cspkg: wrong arguments for config --set command.\n")
-                        system.exit(0)
-                    end
-                    config.content[args[0]] = opt[1]
-                    config.save()
-                end
-                case "--unset"
-                    if opt.size != 1
-                        cspkg_log("cspkg: wrong arguments for config --unset command.\n")
-                        system.exit(0)
-                    end
-                    config.content[args[0]] = config.default_content[args[0]]
-                    config.save()
+class cspkg_remove
+    var local_pac = null
+    var support_set = null
+    function find_supports(pac)
+        foreach it in local_pac
+            foreach dep in it.second.Dependencies
+                if dep == pac
+                    support_set.insert(it.first)
+                    break
                 end
             end
         end
-        system.out.println(args[0] + " = " + config.content[args[0]])
+    end
+
+    function run(opt, args)
+        local_pac = config.check_local_packages()
+        foreach pac in args
+        end
+    end
+end
+
+function run_remove(opt, args)
+    if system.file.exists(config.compose_packages())
+        var local_pac = config.check_local_packages()
+        var pending_set = new hash_set
+        foreach it in args
+            if local_pac.exist(it)
+                if config.minimal_deps.exist(it)
+                    cspkg_log("cspkg: can not remove package \'" + it + "\' depended by cspkg.\n")
+                else
+                    pending_set.insert(it)
+                end
+            else
+                cspkg_log("cspkg: package \'" + it + "\' not existed.\n")
+            end
+        end
+        if pending_set.empty()
+            cspkg_log("cspkg: no packages need to be removed.\n")
+            return
+        end
+        var support_set = pending_set
+        foreach it in local_pac
+            foreach dep in it.second.Dependencies
+                if pending_set.exist(dep)
+                    support_set.insert(it.first)
+                end
+            end
+        end
+        if !config.cancel_prompt
+            var sorted_list = new array
+            foreach it in support_set do sorted_list.push_back(it)
+            sorted_list.sort([](a, b)->a < b)
+            system.out.println("Following packages will be removed:")
+            var show_promt = false
+            foreach it in sorted_list
+                if !pending_set.exist(it)
+                    show_promt = true
+                    system.out.println("\t*" + it)
+                else
+                    system.out.println("\t" + it)
+                end
+            end
+            if show_promt
+                system.out.println("\n*: removed according to dependencies")
+            end
+            system.out.println("\nDo you want to continue?[y/n]")
+            if system.console.getch().tolower() != 'y'
+                cspkg_log("cspkg: remove canceled.\n")
+                system.exit(0)
+            end
+        end
+        foreach pac in support_set
+            system.file.remove(env.covscript_home() + system.path.separator + "imports" + system.path.separator + local_pac[pac].FileName)
+            local_pac.erase(pac)
+            utils.save_json(local_pac, config.compose_packages())
+            cspkg_log("cspkg: package \'" + pac + "\' removed successfully.\n")
+        end
+    else
+        cspkg_log("cspkg: can not find package information. try \'cspkg install --import\'\n")
     end
 end
 
 function run_config(opt, args)
-    (new cspkg_config).run(opt, args)
+    if args.size != 1
+        cspkg_log("cspkg: wrong arguments for config command.\n")
+        system.exit(0)
+    end
+    config.init()
+    if !config.content.exist(args[0])
+        cspkg_log("cspkg: key \'" + args[0] + "\' does not exists.\n")
+        system.exit(0)
+    end
+    if !opt.empty()
+        switch opt[0]
+            default
+                cspkg_log("cspkg: unknown option for config: \'" + opt[0] + "\'.\n")
+                system.exit(0)
+            end
+            case "--set"
+                if opt.size != 2
+                    cspkg_log("cspkg: wrong arguments for config --set command.\n")
+                    system.exit(0)
+                end
+                config.content[args[0]] = opt[1]
+                config.save()
+            end
+            case "--unset"
+                if opt.size != 1
+                    cspkg_log("cspkg: wrong arguments for config --unset command.\n")
+                    system.exit(0)
+                end
+                config.content[args[0]] = config.default_content[args[0]]
+                config.save()
+            end
+        end
+    end
+    system.out.println(args[0] + " = " + config.content[args[0]])
 end
 
 function list_packages(opt, args)
@@ -586,7 +666,6 @@ function show_help(opt, args)
         "    remove    | -r  <Package>...  Remove packages\n" +
         "    config    | -c  <Key>         Manage local configuration\n" +
         "    upgrade   | -u                Upgrade local packages\n" +
-        "    clean     | -x                Automatically remove useless packages\n" +
         "    list      | -l                List current packages\n" +
         "    help      | -h                Show help information\n" +
         "    version   | -v                Show version information\n" +
@@ -629,6 +708,8 @@ var cspkg_cmds = {
     "-i" : run_install,
     "upgrade" : run_upgrade,
     "-u" : run_upgrade,
+    "remove" : run_remove,
+    "-r" : run_remove,
     "config" : run_config,
     "-c" : run_config,
     "list" : list_packages,
