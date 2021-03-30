@@ -295,7 +295,7 @@ class cspkg_install
         end
         var info = utils.http_get(package_list.at(pac))
         if info == null || info.empty()
-            cspkg_log("cspkg: timeout when fetching package information: \'" + it.name + "\'.\n")
+            cspkg_log("cspkg: timeout when fetching package information: \'" + pac + "\'.\n")
             return
         end
         info = json.to_var(json.from_string(info))
