@@ -51,6 +51,7 @@ namespace utils
         end
         return move(_s)
     end
+    constant low_speed_limit = 100
     function http_get(url)
         var buff = new iostream.char_buff
         var session = curl.make_session_os(buff.get_ostream())
@@ -62,7 +63,8 @@ namespace utils
         session.set_ssl_verify_peer(false)
         session.set_connect_timeout_ms(config.content.timeout_ms.to_number())
         session.set_accept_timeout_ms(config.content.timeout_ms.to_number())
-        session.set_transmit_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_low_speed_limit(low_speed_limit)
+        session.set_low_speed_time(config.content.timeout_ms.to_number())
         if session.perform()
             return buff.get_string()
         else
@@ -83,7 +85,8 @@ namespace utils
         session.set_ssl_verify_peer(false)
         session.set_connect_timeout_ms(config.content.timeout_ms.to_number())
         session.set_accept_timeout_ms(config.content.timeout_ms.to_number())
-        session.set_transmit_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_low_speed_limit(low_speed_limit)
+        session.set_low_speed_time(config.content.timeout_ms.to_number())
         return session.perform()
     end
 end
@@ -144,7 +147,7 @@ namespace env
 end
 
 namespace config
-    constant version = "2.0"
+    constant version = "2.0.1"
     var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
     @begin
     var default_content = {
@@ -155,6 +158,7 @@ namespace config
         "source" : "http://mirrors.covariant.cn/cspkg/index.json"
     }.to_hash_map()
     @end
+    var reserved_configs = {"proxy"}.to_hash_set()
     var content = null
     var cancel_prompt = false
     function compose_home()
@@ -578,7 +582,7 @@ function run_config(opt, args)
         system.exit(0)
     end
     config.init()
-    if !config.content.exist(args[0])
+    if !config.content.exist(args[0]) && !config.reserved_configs.exist(args[0])
         cspkg_log("cspkg: key \'" + args[0] + "\' does not exists.\n")
         system.exit(0)
     end
@@ -601,12 +605,20 @@ function run_config(opt, args)
                     cspkg_log("cspkg: wrong arguments for config --unset command.\n")
                     system.exit(0)
                 end
-                config.content[args[0]] = config.default_content[args[0]]
+                if config.default_content.exist(args[0])
+                    config.content[args[0]] = config.default_content[args[0]]
+                else
+                    config.content.erase(args[0])
+                end
                 config.save()
             end
         end
     end
-    system.out.println(args[0] + " = " + config.content[args[0]])
+    if config.reserved_configs.exist(args[0]) && !config.content.exist(args[0])
+        system.out.println("\'" + args[0] + "\' is not set")
+    else
+        system.out.println(args[0] + " = " + config.content[args[0]])
+    end    
 end
 
 function list_packages(opt, args)
