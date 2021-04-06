@@ -22,6 +22,7 @@ Commands:
 
 Options:
     --import                      scanning local CovScript packages
+    --show-avail                  show available CovScript packages in remote source
     --set     <Value>             Set a configuration key
     --unset                       Restore a configuration key to default
     --yes                         Cancel the prompt

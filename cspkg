@@ -74,7 +74,7 @@ namespace utils
     function http_get_file(url, path)
         var ofs = iostream.fstream(path, iostream.openmode.bin_out)
         if !ofs.good()
-            return false
+            return -1
         end
         var session = curl.make_session_os(ofs)
         session.set_url(url)
@@ -87,7 +87,7 @@ namespace utils
         session.set_accept_timeout_ms(config.content.timeout_ms.to_number())
         session.set_low_speed_limit(low_speed_limit)
         session.set_low_speed_time(config.content.timeout_ms.to_number())
-        return session.perform()
+        return session.perform() ? 1 : 0
     end
 end
 
@@ -147,7 +147,7 @@ namespace env
 end
 
 namespace config
-    constant version = "2.0.1"
+    constant version = "2.0.2"
     var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
     @begin
     var default_content = {
@@ -155,7 +155,7 @@ namespace config
         "home" : env.covscript_home(),
         "timeout_ms" : "1000",
         # "proxy" : ""
-        "source" : "http://mirrors.covariant.cn/cspkg/index.json"
+        "source" : "https://raw.githubusercontent.com/covscript/cspkg-sources/main/index.json;http://mirrors.covariant.cn/cspkg/index.json"
     }.to_hash_map()
     @end
     var reserved_configs = {"proxy"}.to_hash_set()
@@ -253,11 +253,11 @@ class cspkg_install
     var local_pac = null
     var deps_cache = null
     var deps_set = null
-    function fetch_source()
-        var source = utils.http_get(config.content.source)
+    function fetch_source_url(src_url)
+        var source = utils.http_get(src_url)
         if source == null || source.empty()
             cspkg_log("cspkg: timeout when fetching source.\n")
-            system.exit(0)
+            return
         end
         source = json.to_var(json.from_string(source))
         if source.exist("universal")
@@ -286,11 +286,13 @@ class cspkg_install
                 else
                     cspkg_log("cspkg: timeout when fetching platform source.\n")
                 end
-            else
-                cspkg_log("cspkg: target source does not support current arch \'" + config.content.arch + "\'.\n")
             end
-        else
-            cspkg_log("cspkg: target source does not support current OS \'" + env.platform() + "\'.\n")
+        end
+    end
+    function fetch_source()
+        var repos = config.content.source.split({';'})
+        foreach url in repos
+            fetch_source_url(url)
         end
     end
     function find_deps(pac)
@@ -333,6 +335,28 @@ class cspkg_install
                 default
                     cspkg_log("cspkg: unknown option for install: \'" + opt[0] + "\'.\n")
                     system.exit(0)
+                end
+                case "--show-avail"
+                    if opt.size != 1
+                        cspkg_log("cspkg: wrong arguments for install --show-avail command.\n")
+                        system.exit(0)
+                    end
+                    local_pac = config.check_local_packages()
+                    var pac_names = new array
+                    foreach it in package_list do pac_names.push_back(it.first)
+                    pac_names.sort([](a, b)->a < b)
+                    var show_promt = false
+                    foreach it in pac_names
+                        if local_pac.exist(it)
+                            show_promt = true
+                            system.out.println("\t*" + it)
+                        else
+                            system.out.println("\t" + it)
+                        end
+                    end
+                    if show_promt
+                        system.out.println("\n*: installed locally")
+                    end
                 end
                 case "--import"
                     if opt.size != 1
@@ -436,11 +460,19 @@ class cspkg_install
                     cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".\n")
                     continue
                 end
-                utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
-                local_pac.insert(it, info)
-                local_pac[it]["FileName"] = r.str(1)
-                utils.save_json(local_pac, config.compose_packages())
-                cspkg_log("cspkg: package \'" + it + "\' installed successfully.\n")
+                var error_value = utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
+                if error_value == 1
+                    local_pac.insert(it, info)
+                    local_pac[it]["FileName"] = r.str(1)
+                    utils.save_json(local_pac, config.compose_packages())
+                    cspkg_log("cspkg: package \'" + it + "\' installed successfully.\n")
+                else
+                    if error_value > 0
+                        cspkg_log("cspkg: package \'" + it + "\' install failed(timeout when download file).\n")
+                    else
+                        cspkg_log("cspkg: package \'" + it + "\' install failed(unable to create file, try run with rights of administrator).\n")
+                    end
+                end
             end
         end
     end
@@ -481,11 +513,19 @@ class cspkg_upgrade extends cspkg_install
                 cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".\n")
                 continue
             end
-            utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
-            this.local_pac[pac.first] = info
-            this.local_pac[pac.first]["FileName"] = r.str(1)
-            utils.save_json(this.local_pac, config.compose_packages())
-            cspkg_log("cspkg: package \'" + pac.first + "\' upgraded successfully.\n")
+            var error_value = utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
+            if error_value == 1
+                this.local_pac[pac.first] = info
+                this.local_pac[pac.first]["FileName"] = r.str(1)
+                utils.save_json(this.local_pac, config.compose_packages())
+                cspkg_log("cspkg: package \'" + pac.first + "\' upgraded successfully.\n")
+            else
+                if error_value > 0
+                    cspkg_log("cspkg: package \'" + it + "\' install failed(timeout when download file).\n")
+                else
+                    cspkg_log("cspkg: package \'" + it + "\' install failed(unable to create file, try run with rights of administrator).\n")
+                end
+            end
         end
     end
 end
@@ -683,6 +723,7 @@ function show_help(opt, args)
         "    version   | -v                Show version information\n" +
         "\nOptions:\n" +
         "    --import                      scanning local CovScript packages\n" +
+        "    --show-avail                  show available CovScript packages in remote source\n" +
         "    --set     <Value>             Set a configuration key\n" +
         "    --unset                       Restore a configuration key to default\n" +
         "    --yes                         Cancel the prompt"
