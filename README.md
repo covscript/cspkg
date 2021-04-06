@@ -72,7 +72,7 @@ You can:
 + Upload to dedicated server(mostly for releasing purpose)
 
 ### Step 3: Building your package
-If your package is written in Covariant Script, there's no need for extra building. But if you are written and Covariant Script Extension, please follow [CSBuild Instruction](https://github.com/covscript/csbuild)(*under construction*).
+If your package is written in Covariant Script, there's no need for extra building. But if you are written and Covariant Script Extension, please follow [CSBuild Instruction](https://github.com/covscript/csbuild#build-your-package-with-csbuild).
 
 ### Step 4: Submit your Package to CSPKG Source
 1. Fork [CSPKG Source GitHub Repository](https://github.com/covscript/cspkg-sources)
