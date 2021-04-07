@@ -51,8 +51,16 @@ namespace utils
         end
         return move(_s)
     end
+    var url_reg = regex.build("^[a-zA-z]+://[^\\s]*$")
+    function check_url(url)
+        return !utils.url_reg.match(url).empty()
+    end
     constant low_speed_limit = 100
     function http_get(url)
+        if !utils.check_url(url)
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".\n")
+            return null
+        end
         var buff = new iostream.char_buff
         var session = curl.make_session_os(buff.get_ostream())
         session.set_url(url)
@@ -72,6 +80,10 @@ namespace utils
         end
     end
     function http_get_file(url, path)
+        if !utils.check_url(url)
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".\n")
+            return -2
+        end
         var ofs = iostream.fstream(path, iostream.openmode.bin_out)
         if !ofs.good()
             return -1
@@ -144,10 +156,17 @@ namespace env
             end
         end
     end
+    function covscript_abi()
+        var abi_reg = regex.build("ABI Version: ([A-Z0-9]{6})")
+        var p = process.exec("cs", {"-v"})
+        var r = null, line = null
+        loop; until !(r = abi_reg.search(line = p.out().getline())).empty()
+        return r.str(1)
+    end
 end
 
 namespace config
-    constant version = "2.0.2"
+    constant version = "2.0.3"
     var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
     @begin
     var default_content = {
@@ -461,15 +480,17 @@ class cspkg_install
                     continue
                 end
                 var error_value = utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
-                if error_value == 1
-                    local_pac.insert(it, info)
-                    local_pac[it]["FileName"] = r.str(1)
-                    utils.save_json(local_pac, config.compose_packages())
-                    cspkg_log("cspkg: package \'" + it + "\' installed successfully.\n")
-                else
-                    if error_value > 0
+                switch error_value
+                    case 1
+                        local_pac.insert(it, info)
+                        local_pac[it]["FileName"] = r.str(1)
+                        utils.save_json(local_pac, config.compose_packages())
+                        cspkg_log("cspkg: package \'" + it + "\' installed successfully.\n")
+                    end
+                    case 0
                         cspkg_log("cspkg: package \'" + it + "\' install failed(timeout when download file).\n")
-                    else
+                    end
+                    case -1
                         cspkg_log("cspkg: package \'" + it + "\' install failed(unable to create file, try run with rights of administrator).\n")
                     end
                 end
@@ -514,15 +535,17 @@ class cspkg_upgrade extends cspkg_install
                 continue
             end
             var error_value = utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
-            if error_value == 1
-                this.local_pac[pac.first] = info
-                this.local_pac[pac.first]["FileName"] = r.str(1)
-                utils.save_json(this.local_pac, config.compose_packages())
-                cspkg_log("cspkg: package \'" + pac.first + "\' upgraded successfully.\n")
-            else
-                if error_value > 0
+            switch error_value
+                case 1
+                    this.local_pac[pac.first] = info
+                    this.local_pac[pac.first]["FileName"] = r.str(1)
+                    utils.save_json(this.local_pac, config.compose_packages())
+                    cspkg_log("cspkg: package \'" + pac.first + "\' upgraded successfully.\n")
+                end
+                case 0
                     cspkg_log("cspkg: package \'" + it + "\' install failed(timeout when download file).\n")
-                else
+                end
+                case -1
                     cspkg_log("cspkg: package \'" + it + "\' install failed(unable to create file, try run with rights of administrator).\n")
                 end
             end
@@ -613,6 +636,91 @@ function run_remove(opt, args)
         end
     else
         cspkg_log("cspkg: can not find package information. try \'cspkg install --import\'\n")
+    end
+end
+
+function mkdir_p(path)
+    var arr = path.split({'\\', '/'})
+    context.unlink_var("path")
+    path = arr[0]
+    system.file.mkdir(path)
+    arr.pop_front()
+    foreach it in arr
+        if !it.empty()
+            path += to_string(system.path.separator) + it
+            system.file.mkdir(path)
+        end
+    end
+end
+
+function run_build(opt, args)
+    if args.size != 2
+        cspkg_log("cspkg: wrong arguments for build command.\n")
+        system.exit(0)
+    end
+    var url = args[0], base_path = args[1], path = args[1] + system.path.separator + "csbuild"
+    if !utils.check_url(url)
+        cspkg_log("cspkg: error when parsing URL \'" + url + "\".\n")
+        system.exit(0)
+    end
+    if url[-1] != '/'
+        url += '/'
+    end
+    if !system.file.is_directory(path)
+        cspkg_log("cspkg: configure directory not found in module \'" + base_path + "\'\n")
+        system.exit(0)
+    end
+    var idx_path = base_path, pkg_path = base_path, idx_os_path = base_path, pkg_os_path = base_path
+    if !opt.empty()
+        if opt[0] != "--flat"
+            cspkg_log("cspkg: unknown option for build: \'" + opt[0] + "\'.\n")
+            system.exit(0)
+        end
+        if opt.size != 1
+            cspkg_log("cspkg: wrong arguments for build --flat command.\n")
+            system.exit(0)
+        end
+    else
+        idx_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + "universal"
+        pkg_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + "universal"
+        idx_os_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + env.platform() + system.path.separator + env.arch()
+        pkg_os_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + env.platform() + system.path.separator + env.arch()
+    end
+    var json_reg = regex.build("^(.*)\\.json$")
+    var files = system.path.scan(path)
+    foreach entry in files
+        if entry.type == system.path.type.reg
+            if !json_reg.match(entry.name).empty()
+                var info = utils.open_json(path + system.path.separator + entry.name)
+                if info.Type == "Extension"
+                    info.Version += "_ABI" + env.covscript_abi()
+                end
+                cspkg_log("cspkg: building package " + info.Name + "(" + info.Version + ")...\n")
+                var file_reg = regex.build("^.*?(\\w+\\.(cse|csp))$")
+                var file_name = file_reg.match(info.Target)
+                if file_name.empty() || !system.file.exists(base_path + system.path.separator + info.Target)
+                    cspkg_log("cspkg: invalid target in module \'" + base_path + "\'\n")
+                    continue
+                end
+                if info.Type == "Extension"
+                    mkdir_p(idx_os_path)
+                    mkdir_p(pkg_os_path)
+                    system.file.copy(base_path + system.path.separator + info.Target, pkg_os_path + system.path.separator + file_name.str(1))
+                    info.Target = url + env.platform() + "/" + env.arch() + "/" + file_name.str(1)
+                    info.erase("Type")
+                    utils.save_json(info, idx_os_path + system.path.separator + info.Name + ".json")
+                    continue
+                end
+                if info.Type == "Package"
+                    mkdir_p(idx_path)
+                    mkdir_p(pkg_path)
+                    system.file.copy(base_path + system.path.separator + info.Target, pkg_path + system.path.separator + file_name.str(1))
+                    info.Target = url + "universal/" + file_name.str(1)
+                    info.erase("Type")
+                    utils.save_json(info, idx_path + system.path.separator + info.Name + ".json")
+                end
+            end
+        end
     end
 end
 
@@ -718,6 +826,7 @@ function show_help(opt, args)
         "    remove    | -r  <Package>...  Remove packages\n" +
         "    config    | -c  <Key>         Manage local configuration\n" +
         "    upgrade   | -u                Upgrade local packages\n" +
+        "    build     | -b  <URL> <PATH>  Build package index file\n" +
         "    list      | -l                List current packages\n" +
         "    help      | -h                Show help information\n" +
         "    version   | -v                Show version information\n" +
@@ -726,6 +835,7 @@ function show_help(opt, args)
         "    --show-avail                  show available CovScript packages in remote source\n" +
         "    --set     <Value>             Set a configuration key\n" +
         "    --unset                       Restore a configuration key to default\n" +
+        "    --flat                        Don't create cspkg-repo directory structure\n" +
         "    --yes                         Cancel the prompt"
     )
 @end
@@ -765,6 +875,8 @@ var cspkg_cmds = {
     "-r" : run_remove,
     "config" : run_config,
     "-c" : run_config,
+    "build" : run_build,
+    "-b" : run_build,
     "list" : list_packages,
     "-l" : list_packages,
     "help" : show_help,
