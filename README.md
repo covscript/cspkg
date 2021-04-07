@@ -16,6 +16,7 @@ Commands:
     remove    | -r  <Package>...  Remove packages
     config    | -c  <Key>         Manage local configuration
     upgrade   | -u                Upgrade local packages
+    build     | -b  <URL> <PATH>  Build package index file
     list      | -l                List current packages
     help      | -h                Show help information
     version   | -v                Show version information
@@ -25,6 +26,7 @@ Options:
     --show-avail                  show available CovScript packages in remote source
     --set     <Value>             Set a configuration key
     --unset                       Restore a configuration key to default
+    --flat                        Don't create cspkg-repo directory structure
     --yes                         Cancel the prompt
 ```
 
