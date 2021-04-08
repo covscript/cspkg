@@ -166,7 +166,7 @@ namespace env
 end
 
 namespace config
-    constant version = "2.0.4"
+    constant version = "2.0.5"
     var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
     @begin
     var default_content = {
@@ -316,6 +316,10 @@ class cspkg_install
     end
     function find_deps(pac)
         if deps_set.exist(pac)
+            return
+        end
+        if !package_list.exist(pac)
+            cspkg_log("cspkg: can not find corresponding package information: \'" + pac + "\'.\n")
             return
         end
         var info = utils.http_get(package_list.at(pac))
@@ -534,7 +538,7 @@ class cspkg_upgrade extends cspkg_install
                 cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".\n")
                 continue
             end
-            var error_value = utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
+            var error_value = config.minimal_deps.exist(pac.first) ? 1 : utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
             switch error_value
                 case 1
                     this.local_pac[pac.first] = info
@@ -543,10 +547,10 @@ class cspkg_upgrade extends cspkg_install
                     cspkg_log("cspkg: package \'" + pac.first + "\' upgraded successfully.\n")
                 end
                 case 0
-                    cspkg_log("cspkg: package \'" + it + "\' install failed(timeout when download file).\n")
+                    cspkg_log("cspkg: package \'" + pac.first + "\' install failed(timeout when download file).\n")
                 end
                 case -1
-                    cspkg_log("cspkg: package \'" + it + "\' install failed(unable to create file, try run with rights of administrator).\n")
+                    cspkg_log("cspkg: package \'" + pac.first + "\' install failed(unable to create file, try run with rights of administrator).\n")
                 end
             end
         end
