@@ -166,14 +166,14 @@ namespace env
 end
 
 namespace config
-    constant version = "2.0.3"
+    constant version = "2.0.4"
     var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
     @begin
     var default_content = {
         "arch" : env.arch(),
         "home" : env.covscript_home(),
-        "timeout_ms" : "1000",
-        # "proxy" : ""
+        "timeout_ms" : "3000",
+    #   "proxy" : ""
         "source" : "https://raw.githubusercontent.com/covscript/cspkg-sources/main/index.json;http://mirrors.covariant.cn/cspkg/index.json"
     }.to_hash_map()
     @end
@@ -196,13 +196,13 @@ namespace config
         utils.save_json(config.content, config.compose_config())
     end
     function create()
-        system.file.mkdir(config.compose_home())
-        if !system.file.exists(config.compose_config())
+        system.file.mkdir_p(config.compose_home())
+        if !system.file.exist(config.compose_config())
             config.save()
         end
     end
     function init()
-        if !system.file.exists(config.compose_config())
+        if !system.file.exist(config.compose_config())
             config.content = config.default_content
             config.create()
         else
@@ -210,7 +210,7 @@ namespace config
         end
     end
     function check_local_packages()
-        if !system.file.exists(config.compose_packages())
+        if !system.file.exist(config.compose_packages())
             return new hash_map
         end
         var packages = utils.open_json(config.compose_packages())
@@ -245,7 +245,7 @@ namespace log_impl
     var log = null
     function open_log()
         if log_impl.log == null
-            system.file.mkdir(config.compose_home())
+            system.file.mkdir_p(config.compose_home())
             log_impl.log = iostream.fstream(config.compose_log(), iostream.openmode.app)
         end
     end
@@ -579,7 +579,7 @@ class cspkg_remove
 end
 
 function run_remove(opt, args)
-    if system.file.exists(config.compose_packages())
+    if system.file.exist(config.compose_packages())
         var local_pac = config.check_local_packages()
         var pending_set = new hash_set
         foreach it in args
@@ -639,20 +639,6 @@ function run_remove(opt, args)
     end
 end
 
-function mkdir_p(path)
-    var arr = path.split({'\\', '/'})
-    context.unlink_var("path")
-    path = arr[0]
-    system.file.mkdir(path)
-    arr.pop_front()
-    foreach it in arr
-        if !it.empty()
-            path += to_string(system.path.separator) + it
-            system.file.mkdir(path)
-        end
-    end
-end
-
 function run_build(opt, args)
     if args.size != 2
         cspkg_log("cspkg: wrong arguments for build command.\n")
@@ -666,7 +652,7 @@ function run_build(opt, args)
     if url[-1] != '/'
         url += '/'
     end
-    if !system.file.is_directory(path)
+    if !system.path.exist(path)
         cspkg_log("cspkg: configure directory not found in module \'" + base_path + "\'\n")
         system.exit(0)
     end
@@ -698,13 +684,13 @@ function run_build(opt, args)
                 cspkg_log("cspkg: building package " + info.Name + "(" + info.Version + ")...\n")
                 var file_reg = regex.build("^.*?(\\w+\\.(cse|csp))$")
                 var file_name = file_reg.match(info.Target)
-                if file_name.empty() || !system.file.exists(base_path + system.path.separator + info.Target)
+                if file_name.empty() || !system.file.exist(base_path + system.path.separator + info.Target)
                     cspkg_log("cspkg: invalid target in module \'" + base_path + "\'\n")
                     continue
                 end
                 if info.Type == "Extension"
-                    mkdir_p(idx_os_path)
-                    mkdir_p(pkg_os_path)
+                    system.path.mkdir_p(idx_os_path)
+                    system.path.mkdir_p(pkg_os_path)
                     system.file.copy(base_path + system.path.separator + info.Target, pkg_os_path + system.path.separator + file_name.str(1))
                     info.Target = url + env.platform() + "/" + env.arch() + "/" + file_name.str(1)
                     info.erase("Type")
@@ -712,8 +698,8 @@ function run_build(opt, args)
                     continue
                 end
                 if info.Type == "Package"
-                    mkdir_p(idx_path)
-                    mkdir_p(pkg_path)
+                    system.path.mkdir_p(idx_path)
+                    system.path.mkdir_p(pkg_path)
                     system.file.copy(base_path + system.path.separator + info.Target, pkg_path + system.path.separator + file_name.str(1))
                     info.Target = url + "universal/" + file_name.str(1)
                     info.erase("Type")
@@ -770,7 +756,7 @@ function run_config(opt, args)
 end
 
 function list_packages(opt, args)
-    if system.file.exists(config.compose_packages())
+    if system.file.exist(config.compose_packages())
         var packages = config.check_local_packages()
         block
             var oldt = packages
