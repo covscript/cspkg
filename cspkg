@@ -140,9 +140,9 @@ namespace env
     end
     @begin
     var arch_map = {
-        {"AMD64" : "x86_64"},
-        {"ARM64" : "arm64"},
-        {"X86"   : "i386"}
+        "AMD64" : "x86_64",
+        "ARM64" : "arm64",
+        "X86"   : "i386"
     }.to_hash_map()
     @end
     function arch()
@@ -151,8 +151,8 @@ namespace env
             return p.out().getline()
         else
             var arch_name = system.getenv("PROCESSOR_ARCHITECTURE")
-            if arch_map.exist(arch_name)
-                return arch_map[arch_name]
+            if env.arch_map.exist(arch_name)
+                return env.arch_map[arch_name]
             else
                 throw runtime.exception("Unrecognizable platform name: " + arch_name)
             end
