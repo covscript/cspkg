@@ -64,6 +64,7 @@ namespace utils
         var buff = new iostream.char_buff
         var session = curl.make_session_os(buff.get_ostream())
         session.set_url(url)
+        session.allow_redirect(true)
         if config.content.exist("proxy")
             session.set_proxy(config.content.proxy)
         end
@@ -90,6 +91,7 @@ namespace utils
         end
         var session = curl.make_session_os(ofs)
         session.set_url(url)
+        session.allow_redirect(true)
         if config.content.exist("proxy")
             session.set_proxy(config.content.proxy)
         end
