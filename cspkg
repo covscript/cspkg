@@ -168,7 +168,7 @@ namespace env
 end
 
 namespace config
-    constant version = "2.0.7"
+    constant version = "2.1"
     var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
     @begin
     var default_content = {
@@ -179,6 +179,7 @@ namespace config
         "source" : "https://raw.githubusercontent.com/covscript/cspkg-sources/main/index.json;http://mirrors.covariant.cn/cspkg/index.json"
     }.to_hash_map()
     @end
+    var array_configs = {"source"}.to_hash_set()
     var reserved_configs = {"proxy"}.to_hash_set()
     var content = null
     var cancel_prompt = false
@@ -749,6 +750,29 @@ function run_config(opt, args)
                 config.content[args[0]] = opt[1]
                 config.save()
             end
+            case "--app"
+                if opt.size != 2
+                    cspkg_log("cspkg: wrong arguments for config --app command.\n")
+                    system.exit(0)
+                end
+                if config.array_configs.exist(args[0])
+                    link cfg = config.content[args[0]]
+                    var arr = cfg.split({';'})
+                    cfg = new string
+                    foreach it in arr
+                        if it == opt[1]
+                            cspkg_log("cspkg: value existed in \'" + args[0] + "\'.\n")
+                            system.exit(0)
+                        end
+                        cfg += it + ";"
+                    end
+                    cfg += opt[1]
+                    config.save()
+                else
+                    cspkg_log("cspkg: can not append to non-array config \'" + args[0] + "\'.\n")
+                    system.exit(0)
+                end
+            end
             case "--unset"
                 if opt.size != 1
                     cspkg_log("cspkg: wrong arguments for config --unset command.\n")
@@ -835,6 +859,7 @@ function show_help(opt, args)
         "    --import                      scanning local CovScript packages\n" +
         "    --show-avail                  show available CovScript packages in remote source\n" +
         "    --set     <Value>             Set a configuration key\n" +
+        "    --app     <Value>             Append to a configuration key\n" +
         "    --unset                       Restore a configuration key to default\n" +
         "    --flat                        Don't create cspkg-repo directory structure\n" +
         "    --yes                         Cancel the prompt"
