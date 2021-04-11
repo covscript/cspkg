@@ -166,7 +166,7 @@ namespace env
 end
 
 namespace config
-    constant version = "2.0.5"
+    constant version = "2.0.6"
     var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
     @begin
     var default_content = {
@@ -660,7 +660,7 @@ function run_build(opt, args)
         cspkg_log("cspkg: configure directory not found in module \'" + base_path + "\'\n")
         system.exit(0)
     end
-    var idx_path = base_path, pkg_path = base_path, idx_os_path = base_path, pkg_os_path = base_path
+    var idx_path = base_path, pkg_path = base_path, idx_os_path = base_path, pkg_os_path = base_path, flat = false
     if !opt.empty()
         if opt[0] != "--flat"
             cspkg_log("cspkg: unknown option for build: \'" + opt[0] + "\'.\n")
@@ -670,6 +670,7 @@ function run_build(opt, args)
             cspkg_log("cspkg: wrong arguments for build --flat command.\n")
             system.exit(0)
         end
+        flat = true
     else
         idx_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + "universal"
         pkg_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + "universal"
@@ -696,7 +697,11 @@ function run_build(opt, args)
                     system.path.mkdir_p(idx_os_path)
                     system.path.mkdir_p(pkg_os_path)
                     system.file.copy(base_path + system.path.separator + info.Target, pkg_os_path + system.path.separator + file_name.str(1))
-                    info.Target = url + env.platform() + "/" + env.arch() + "/" + file_name.str(1)
+                    if flat
+                        info.Target = url + file_name.str(1)
+                    else
+                        info.Target = url + env.platform() + "/" + env.arch() + "/" + file_name.str(1)
+                    end
                     info.erase("Type")
                     utils.save_json(info, idx_os_path + system.path.separator + info.Name + ".json")
                     continue
@@ -705,7 +710,11 @@ function run_build(opt, args)
                     system.path.mkdir_p(idx_path)
                     system.path.mkdir_p(pkg_path)
                     system.file.copy(base_path + system.path.separator + info.Target, pkg_path + system.path.separator + file_name.str(1))
-                    info.Target = url + "universal/" + file_name.str(1)
+                    if flat
+                        info.Target = url + file_name.str(1)
+                    else
+                        info.Target = url + "universal/" + file_name.str(1)
+                    end
                     info.erase("Type")
                     utils.save_json(info, idx_path + system.path.separator + info.Name + ".json")
                 end
