@@ -168,7 +168,7 @@ namespace env
 end
 
 namespace config
-    constant version = "2.0.6"
+    constant version = "2.0.7"
     var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
     @begin
     var default_content = {
