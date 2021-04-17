@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.2.2"
+constant cspkg_version = "2.2.3"
 
 import codec.json as json
 import process
@@ -684,7 +684,7 @@ function run_remove(opt, args)
     end
 end
 
-function build_install(base_path, package)
+function build_install(base_path, pacs)
     var path = base_path + "csbuild"
     if !system.path.exist(path)
         cspkg_log("cspkg: configure directory not found in module \'" + base_path + "\'")
@@ -697,6 +697,13 @@ function build_install(base_path, package)
         if entry.type == system.path.type.reg
             if !json_reg.match(entry.name).empty()
                 var info = utils.open_json(path + system.path.separator + entry.name)
+                if !pacs.empty()
+                    if pacs.exist(info.Name)
+                        pacs.erase(info.Name)
+                    else
+                        continue
+                    end
+                end
                 if info.Type == "Extension"
                     info.Version += "_ABI" + env.covscript_abi()
                 end
@@ -709,7 +716,7 @@ function build_install(base_path, package)
                 end
                 if !system.file.copy(base_path + info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + file_name.str(1))
                     cspkg_log("cspkg: package \'" + info.Name + "\' install failed(unable to create file, try run with rights of administrator).")
-                    system.exit(0)
+                    continue
                 end
                 info.erase("Type")
                 info["FileName"] = file_name.str(1)
@@ -719,6 +726,9 @@ function build_install(base_path, package)
                 cspkg_log("cspkg: package \'" + info.Name + "\' installed successfully.")
             end
         end
+    end
+    foreach it in pacs
+        cspkg_log("cspkg: package \'" + it + "\' not existed.")
     end
 end
 
@@ -816,11 +826,9 @@ function run_build(opt, args)
                 system.exit(0)
             end
             case "--install"
-                if opt.size != 2
-                    cspkg_log("cspkg: wrong arguments for build --install command.")
-                    system.exit(0)
-                end
-                build_install(base_path, opt[1])
+                var pacs = new hash_set
+                for i = 1, i < opt.size, ++i do pacs.insert(opt[i])
+                build_install(base_path, pacs)
             end
             case "--release"
                 if opt.size != 2
@@ -975,7 +983,7 @@ function show_help(opt, args)
         "    --app         <Value>         Append to a configuration key\n" +
         "    --unset                       Restore a configuration key to default\n\n" +
         "  cspkg build\n" +
-        "    --install     <Package>       Install a local package\n" +
+        "    --install     [Package]...    Install a local package\n" +
         "    --release     <Source URL>    Generate package index files for release\n" +
         "    --flat                        Don't create cspkg-repo directory structure\n"
     )
