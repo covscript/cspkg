@@ -26,6 +26,7 @@ Options:
     --yes                         Cancel the prompt
 
   cspkg install
+    --fix                         Fix broken dependencies
     --import                      Scanning local CovScript packages
     --show-avail                  Show available CovScript packages in remote source
 
