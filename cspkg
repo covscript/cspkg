@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.2.1"
+constant cspkg_version = "2.2.2"
 
 import codec.json as json
 import process
@@ -797,7 +797,7 @@ function run_build(opt, args)
     if base_path[-1] != system.path.separator
         base_path += system.path.separator
     end
-    for it = opt.begin, it != opt.end, it.next()
+    for it = opt.begin, it != opt.end, null
         if it.data == "--flat"
             it = opt.erase(it)
             if !flat
@@ -805,6 +805,8 @@ function run_build(opt, args)
             else
                 cspkg_log("cspkg: duplicated option \'--flat\'")
             end
+        else
+            it.next()
         end
     end
     if !opt.empty()
