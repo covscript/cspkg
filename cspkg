@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.1.2"
+constant cspkg_version = "2.2.1"
 
 import codec.json as json
 import process
@@ -684,12 +684,46 @@ function run_remove(opt, args)
     end
 end
 
-function run_build(opt, args)
-    if args.size != 2
-        cspkg_log("cspkg: wrong arguments for build command.")
+function build_install(base_path, package)
+    var path = base_path + "csbuild"
+    if !system.path.exist(path)
+        cspkg_log("cspkg: configure directory not found in module \'" + base_path + "\'")
         system.exit(0)
     end
-    var url = args[0], base_path = args[1], path = args[1] + system.path.separator + "csbuild"
+    var local_pac = config.check_local_packages()
+    var json_reg = regex.build("^(.*)\\.json$")
+    var files = system.path.scan(path)
+    foreach entry in files
+        if entry.type == system.path.type.reg
+            if !json_reg.match(entry.name).empty()
+                var info = utils.open_json(path + system.path.separator + entry.name)
+                if info.Type == "Extension"
+                    info.Version += "_ABI" + env.covscript_abi()
+                end
+                cspkg_print("Installing local package " + info.Name + "(" + info.Version + ")...")
+                var file_reg = regex.build("^.*?(\\w+\\.(cse|csp))$")
+                var file_name = file_reg.match(info.Target)
+                if file_name.empty() || !system.file.exist(base_path + info.Target)
+                    cspkg_log("cspkg: invalid target in module \'" + base_path + "\'")
+                    continue
+                end
+                if !system.file.copy(base_path + info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + file_name.str(1))
+                    cspkg_log("cspkg: package \'" + info.Name + "\' install failed(unable to create file, try run with rights of administrator).")
+                    system.exit(0)
+                end
+                info.erase("Type")
+                info["FileName"] = file_name.str(1)
+                info.Target = "<LOCAL_PAC>"
+                local_pac.insert(info.Name, info)
+                utils.save_json(local_pac, config.compose_packages())
+                cspkg_log("cspkg: package \'" + info.Name + "\' installed successfully.")
+            end
+        end
+    end
+end
+
+function build_release(base_path, url, flat)
+    var path = base_path + "csbuild"
     if !utils.check_url(url)
         cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
         system.exit(0)
@@ -701,22 +735,12 @@ function run_build(opt, args)
         cspkg_log("cspkg: configure directory not found in module \'" + base_path + "\'")
         system.exit(0)
     end
-    var idx_path = base_path, pkg_path = base_path, idx_os_path = base_path, pkg_os_path = base_path, flat = false
-    if !opt.empty()
-        if opt[0] != "--flat"
-            cspkg_log("cspkg: unknown option for build: \'" + opt[0] + "\'.")
-            system.exit(0)
-        end
-        if opt.size != 1
-            cspkg_log("cspkg: wrong arguments for build --flat command.")
-            system.exit(0)
-        end
-        flat = true
-    else
-        idx_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + "universal"
-        pkg_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + "universal"
-        idx_os_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + env.platform() + system.path.separator + env.arch()
-        pkg_os_path = base_path + system.path.separator + "cspkg-repo" + system.path.separator + env.platform() + system.path.separator + env.arch()
+    var idx_path = base_path, pkg_path = base_path, idx_os_path = base_path, pkg_os_path = base_path
+    if !flat
+        idx_path = base_path + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + "universal"
+        pkg_path = base_path + "cspkg-repo" + system.path.separator + "universal"
+        idx_os_path = base_path + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + env.platform() + system.path.separator + env.arch()
+        pkg_os_path = base_path + "cspkg-repo" + system.path.separator + env.platform() + system.path.separator + env.arch()
     end
     var json_reg = regex.build("^(.*)\\.json$")
     var files = system.path.scan(path)
@@ -727,17 +751,17 @@ function run_build(opt, args)
                 if info.Type == "Extension"
                     info.Version += "_ABI" + env.covscript_abi()
                 end
-                cspkg_log("cspkg: building package " + info.Name + "(" + info.Version + ")...")
+                cspkg_print("Building package " + info.Name + "(" + info.Version + ")...")
                 var file_reg = regex.build("^.*?(\\w+\\.(cse|csp))$")
                 var file_name = file_reg.match(info.Target)
-                if file_name.empty() || !system.file.exist(base_path + system.path.separator + info.Target)
+                if file_name.empty() || !system.file.exist(base_path + info.Target)
                     cspkg_log("cspkg: invalid target in module \'" + base_path + "\'")
                     continue
                 end
                 if info.Type == "Extension"
                     system.path.mkdir_p(idx_os_path)
                     system.path.mkdir_p(pkg_os_path)
-                    system.file.copy(base_path + system.path.separator + info.Target, pkg_os_path + system.path.separator + file_name.str(1))
+                    system.file.copy(base_path + info.Target, pkg_os_path + system.path.separator + file_name.str(1))
                     if flat
                         info.Target = url + file_name.str(1)
                     else
@@ -750,7 +774,7 @@ function run_build(opt, args)
                 if info.Type == "Package"
                     system.path.mkdir_p(idx_path)
                     system.path.mkdir_p(pkg_path)
-                    system.file.copy(base_path + system.path.separator + info.Target, pkg_path + system.path.separator + file_name.str(1))
+                    system.file.copy(base_path + info.Target, pkg_path + system.path.separator + file_name.str(1))
                     if flat
                         info.Target = url + file_name.str(1)
                     else
@@ -761,6 +785,51 @@ function run_build(opt, args)
                 end
             end
         end
+    end
+end
+
+function run_build(opt, args)
+    if args.size != 1
+        cspkg_log("cspkg: wrong arguments for build command.")
+        system.exit(0)
+    end
+    var base_path = args[0], flat = false
+    if base_path[-1] != system.path.separator
+        base_path += system.path.separator
+    end
+    for it = opt.begin, it != opt.end, it.next()
+        if it.data == "--flat"
+            it = opt.erase(it)
+            if !flat
+                flat = true
+            else
+                cspkg_log("cspkg: duplicated option \'--flat\'")
+            end
+        end
+    end
+    if !opt.empty()
+        switch opt[0]
+            default
+                cspkg_log("cspkg: unknown option for build: \'" + opt[0] + "\'.")
+                system.exit(0)
+            end
+            case "--install"
+                if opt.size != 2
+                    cspkg_log("cspkg: wrong arguments for build --install command.")
+                    system.exit(0)
+                end
+                build_install(base_path, opt[1])
+            end
+            case "--release"
+                if opt.size != 2
+                    cspkg_log("cspkg: wrong arguments for build --release command.")
+                    system.exit(0)
+                end
+                build_release(base_path, opt[1], flat)
+            end
+        end
+    else
+        cspkg_log("cspkg: no option for \'cspkg build\'. see \'cspkg help\'")
     end
 end
 
@@ -889,18 +958,24 @@ function show_help(opt, args)
         "    remove    | -r  <Package>...  Remove packages\n" +
         "    config    | -c  <Key>         Manage local configuration\n" +
         "    upgrade   | -u                Upgrade local packages\n" +
-        "    build     | -b  <URL> <PATH>  Build package index file\n" +
+        "    build     | -b  <Path>        Build & test local packages\n" +
         "    list      | -l                List current packages\n" +
         "    help      | -h                Show help information\n" +
         "    version   | -v                Show version information\n" +
         "\nOptions:\n" +
-        "    --import                      scanning local CovScript packages\n" +
-        "    --show-avail                  show available CovScript packages in remote source\n" +
-        "    --set     <Value>             Set a configuration key\n" +
-        "    --app     <Value>             Append to a configuration key\n" +
-        "    --unset                       Restore a configuration key to default\n" +
-        "    --flat                        Don't create cspkg-repo directory structure\n" +
-        "    --yes                         Cancel the prompt"
+        "  General\n" +
+        "    --yes                         Cancel the prompt\n\n" +
+        "  cspkg install\n" +
+        "    --import                      Scanning local CovScript packages\n" +
+        "    --show-avail                  Show available CovScript packages in remote source\n\n" +
+        "  cspkg config\n" +
+        "    --set         <Value>         Set a configuration key\n" +
+        "    --app         <Value>         Append to a configuration key\n" +
+        "    --unset                       Restore a configuration key to default\n\n" +
+        "  cspkg build\n" +
+        "    --install     <Package>       Install a local package\n" +
+        "    --release     <Source URL>    Generate package index files for release\n" +
+        "    --flat                        Don't create cspkg-repo directory structure\n"
     )
 @end
 end
@@ -919,7 +994,7 @@ function show_version(opt, args)
 end
 
 function command_error(cmd)
-    cspkg_log("cspkg: \'" + cmd + "\' is not a cspkg command. see \'csman help\'")
+    cspkg_log("cspkg: \'" + cmd + "\' is not a cspkg command. see \'cspkg help\'")
 end
 
 var cmd_args = context.cmd_args
