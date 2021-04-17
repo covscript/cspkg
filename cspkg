@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.2.5"
+constant cspkg_version = "2.2.6"
 
 import codec.json as json
 import process
@@ -653,26 +653,6 @@ function run_upgrade(opt, args)
     (new cspkg_upgrade).run(opt, args)
 end
 
-class cspkg_remove
-    var local_pac = null
-    var support_set = null
-    function find_supports(pac)
-        foreach it in local_pac
-            foreach dep in it.second.Dependencies
-                if dep == pac
-                    support_set.insert(it.first)
-                    break
-                end
-            end
-        end
-    end
-    function run(opt, args)
-        local_pac = config.check_local_packages()
-        foreach pac in args
-        end
-    end
-end
-
 function run_remove(opt, args)
     if system.file.exist(config.compose_packages())
         var local_pac = config.check_local_packages()
@@ -724,10 +704,13 @@ function run_remove(opt, args)
             end
         end
         foreach pac in support_set
-            system.file.remove(env.covscript_home() + system.path.separator + "imports" + system.path.separator + local_pac[pac].FileName)
-            local_pac.erase(pac)
-            utils.save_json(local_pac, config.compose_packages())
-            cspkg_log("cspkg: package \'" + pac + "\' removed successfully.")
+            if system.file.remove(env.covscript_home() + system.path.separator + "imports" + system.path.separator + local_pac[pac].FileName)
+                local_pac.erase(pac)
+                utils.save_json(local_pac, config.compose_packages())
+                cspkg_log("cspkg: package \'" + pac + "\' removed successfully.")
+            else
+                cspkg_log("cspkg: package \'" + pac + "\' remove failed(unable to delete file, try run with rights of administrator).")
+            end
         end
     else
         cspkg_log("cspkg: can not find package information. try \'cspkg install --import\'")
