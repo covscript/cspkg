@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.2.4"
+constant cspkg_version = "2.2.5"
 
 import codec.json as json
 import process
@@ -538,7 +538,7 @@ class cspkg_install
             system.out.println("Following packages will be installed:")
             var show_promt = false
             foreach it in sorted_list
-                if broken_deps.exist(it)
+                if broken_deps != null && broken_deps.exist(it)
                     show_promt = true
                     system.out.println("\t*" + it)
                 else
