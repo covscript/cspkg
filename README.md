@@ -16,18 +16,29 @@ Commands:
     remove    | -r  <Package>...  Remove packages
     config    | -c  <Key>         Manage local configuration
     upgrade   | -u                Upgrade local packages
-    build     | -b  <URL> <PATH>  Build package index file
+    build     | -b  <Path>        Build & test local packages
     list      | -l                List current packages
     help      | -h                Show help information
     version   | -v                Show version information
 
 Options:
-    --import                      scanning local CovScript packages
-    --show-avail                  show available CovScript packages in remote source
-    --set     <Value>             Set a configuration key
-    --unset                       Restore a configuration key to default
-    --flat                        Don't create cspkg-repo directory structure
+  General
     --yes                         Cancel the prompt
+
+  cspkg install
+    --import                      Scanning local CovScript packages
+    --show-avail                  Show available CovScript packages in remote source
+
+  cspkg config
+    --set         <Value>         Set a configuration key
+    --app         <Value>         Append to a configuration key
+    --unset                       Restore a configuration key to default
+
+  cspkg build
+    --install     [Package]...    Install a local package
+    --release     <Source URL>    Generate package index files for release
+    --flat                        Don't create cspkg-repo directory structure
+
 ```
 
 ## Build your package
