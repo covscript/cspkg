@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.2.6"
+constant cspkg_version = "2.2.7"
 
 import codec.json as json
 import process
@@ -208,7 +208,7 @@ namespace config
         utils.save_json(config.content, config.compose_config())
     end
     function create()
-        system.file.mkdir_p(config.compose_home())
+        system.path.mkdir_p(config.compose_home())
         if !system.file.exist(config.compose_config())
             config.save()
         end
@@ -257,7 +257,7 @@ namespace log_impl
     var log = null
     function open_log()
         if log_impl.log == null
-            system.file.mkdir_p(config.compose_home())
+            system.path.mkdir_p(config.compose_home())
             log_impl.log = iostream.fstream(config.compose_log(), iostream.openmode.app)
         end
     end
