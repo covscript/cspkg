@@ -1,6 +1,8 @@
 # Covariant Script Package Manager
 
-<img src="http://static.runoob.com/images/runoob-logo.png" width="50%">
+<img src="./powered-by.png" width="50%">
+
+Covariant Script Package Manager is an online package manager written in Covariant Script itself.
 
 ## Dependency
 + [Covariant Script Interpreter](https://github.com/covscript/covscript): v3.3.5(STD210401) or newer version
