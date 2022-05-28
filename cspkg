@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.2.7"
+constant cspkg_version = "2.2.8"
 
 import codec.json as json
 import process
@@ -152,7 +152,7 @@ namespace env
     var arch_map = {
         "AMD64" : "x86_64",
         "ARM64" : "arm64",
-        "X86"   : "i386"
+        "x86"   : "i386"
     }.to_hash_map()
     @end
     function arch()
