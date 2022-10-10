@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.2.9"
+constant cspkg_version = "2.2.10"
 
 import codec.json as json
 import process
@@ -223,6 +223,9 @@ namespace config
         end
     end
     function init()
+        if !system.file.exist(env.covscript_home() + system.path.separator + "imports")
+            system.path.mkdir_p(env.covscript_home() + system.path.separator + "imports")
+        end
         if !system.file.exist(config.compose_config())
             config.content = config.default_content
             config.create()
@@ -231,7 +234,7 @@ namespace config
         end
     end
     function check_local_packages()
-        if !system.file.exist(config.compose_packages())
+        if !system.file.exist(config.compose_packages()) || !system.file.exist(env.covscript_home() + system.path.separator + "imports")
             return new hash_map
         end
         var packages = utils.open_json(config.compose_packages())
