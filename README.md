@@ -5,7 +5,7 @@
 Covariant Script Package Manager is an online package manager written in Covariant Script itself.
 
 ## Dependency
-+ [Covariant Script Interpreter](https://github.com/covscript/covscript): v3.3.5(STD210401) or newer version
++ [Covariant Script Interpreter](https://github.com/covscript/covscript): v3.4.1(STD210504) or newer version
 + [CovScript Process](https://github.com/covscript/covscript-process)
 + [CovScript Regex](https://github.com/covscript/covscript-regex)
 + [CovScript Codec](https://github.com/covscript/covscript-codec)
