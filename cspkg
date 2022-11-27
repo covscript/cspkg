@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
 #
-# Covariant Script Package Manager v2.0
+# Covariant Script Package Manager v2.3.1
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.2.11"
+constant cspkg_version = "2.3.1"
 
 import codec.json as json
 import process
@@ -857,6 +857,47 @@ function build_release(base_path, url, flat)
     end
 end
 
+function build_compile(source_path, cxx_opts)
+    if !system.file.exist(source_path)
+        cspkg_log("cspkg: target file \'" + source_path + "\' not found.")
+        system.exit(0)
+    end
+    block
+        var sys_paths = system.getenv("PATH").split({system.path.delimiter})
+        var found_cxx = false
+        foreach it in sys_paths
+            if system.path.exist(it)
+                var entries = system.path.scan(it)
+                foreach entry in entries
+                    if entry.type != system.path.type.dir && (entry.name == "g++" || entry.name == "g++.exe")
+                        cspkg_log("CXX PATH:   " + it + system.path.separator + entry.name)
+                        found_cxx = true
+                        break
+                    end
+                end
+            end
+            if found_cxx
+                break
+            end
+        end
+        if !found_cxx
+            cspkg_log("cspkg: can't find CXX compiler")
+            system.exit(0)
+        end
+    end
+    var csdev_path = system.getenv("CS_DEV_PATH")
+    if csdev_path == null
+        cspkg_log("cspkg: can't find environment variable of CovScript SDK \'CS_DEV_PATH\'")
+        system.exit(0)
+    else
+        cspkg_log("CSDEV PATH: " + csdev_path)
+    end
+    var file_reg = regex.build("^.*?(\\w+)\\.(c|cc|cpp|cxx)$")
+    var file_name = file_reg.match(source_path)
+    cspkg_log("Building module \'" + file_name.str(1) + ".cse\'...")
+    system.exit(system.run("g++ -std=c++14 --shared -fPIC -O3 -I" + csdev_path + system.path.separator + "include " + source_path + " -L" + csdev_path + system.path.separator + "lib -lcovscript -o " + file_name.str(1) + ".cse " + cxx_opts))
+end
+
 function run_build(opt, args)
     if args.size != 1
         cspkg_log("cspkg: wrong arguments for build command.")
@@ -895,6 +936,11 @@ function run_build(opt, args)
                     system.exit(0)
                 end
                 build_release(base_path, opt[1], flat)
+            end
+            case "--compile"
+                var cxx_opts = new string
+                for i = 1, i < opt.size, ++i do cxx_opts += opt[i] + " "
+                build_compile(args[0], cxx_opts)
             end
         end
     else
@@ -1044,6 +1090,7 @@ function show_help(opt, args)
         "    --unset                       Restore a configuration key to default\n\n" +
         "  cspkg build\n" +
         "    --install     [Package]...    Install a local package\n" +
+        "    --compile     [Argument]...   Compile extension using CXX compiler\n" +
         "    --release     <Source URL>    Generate package index files for release\n" +
         "    --flat                        Don't create cspkg-repo directory structure\n"
     )
