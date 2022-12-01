@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
 #
-# Covariant Script Package Manager v2.3.2
+# Covariant Script Package Manager v2.3.3
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.3.2"
+constant cspkg_version = "2.3.3"
 
 import codec.json as json
 import process
@@ -750,6 +750,10 @@ function build_install(base_path, pacs)
                     end
                 end
                 if info.Type == "Extension"
+                    if info.exist("Source")
+                        cspkg_print("Source file detected, building...")
+                        build_compile(base_path + system.path.separator + info.Source, "")
+                    end
                     info.Version += "_ABI" + env.covscript_abi()
                 end
                 cspkg_print("Installing local package " + info.Name + "(" + info.Version + ")...")
@@ -896,7 +900,7 @@ function build_compile(source_path, cxx_opts)
     var file_reg = regex.build("^.*?(\\w+)\\.(c|cc|cpp|cxx)$")
     var file_name = file_reg.match(source_path)
     cspkg_log("Building module \'" + file_name.str(1) + ".cse\'...")
-    system.exit(system.run("g++ -std=c++14 --shared -fPIC -O3 -I\"" + csdev_path + system.path.separator + "include\" \"" + source_path + "\" -L\"" + csdev_path + system.path.separator + "lib\" -lcovscript -o " + file_name.str(1) + ".cse " + cxx_opts))
+    system.run("g++ -std=c++14 --shared -fPIC -O3 -I\"" + csdev_path + system.path.separator + "include\" \"" + source_path + "\" -L\"" + csdev_path + system.path.separator + "lib\" -lcovscript -o " + file_name.str(1) + ".cse " + cxx_opts)
 end
 
 function run_build(opt, args)
