@@ -247,6 +247,9 @@ namespace config
                 var r = reg.match(name)
                 if !r.empty()
                     name = r.str(1)
+                    if r.str(2) == "ecsx"
+                        name += ".ecsx"
+                    end
                     if packages.exist(name)
                         local_pac.insert(name, packages[name])
                     else
