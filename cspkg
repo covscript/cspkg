@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.3.3"
+constant cspkg_version = "2.3.4"
 
 import codec.json as json
 import process
