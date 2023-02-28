@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
 #
-# Covariant Script Package Manager v2.3.4
+# Covariant Script Package Manager v2.3.5
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Copyright (C) 2017-2022 Michael Lee(李登淳)
+# Copyright (C) 2017-2023 Michael Lee(李登淳)
 #
 # Email:   lee@unicov.cn, mikecovlee@163.com
 # Github:  https://github.com/mikecovlee
