@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-constant cspkg_version = "2.3.4"
+constant cspkg_version = "2.3.5"
 
 import codec.json as json
 import process
@@ -892,14 +892,20 @@ function build_compile(source_path, cxx_opts)
             system.exit(0)
         end
     end
-    var csdev_path = system.getenv("CS_DEV_PATH")
-    if csdev_path == null
+    var csdev_path = null
+    try
+        csdev_path = system.getenv("CS_DEV_PATH")
+    catch e
         cspkg_log("cspkg: can't find environment variable of CovScript SDK \'CS_DEV_PATH\'")
-        system.exit(0)
-    else
-        csdev_path = csdev_path.split({system.path.delimiter}).at(0)
-        cspkg_log("CSDEV PATH: " + csdev_path)
+        if system.is_platform_linux() && system.file.exist("/usr/lib/libcovscript.a")
+            cspkg_log("cspkg: set \'CS_DEV_PATH\' to \'/usr/\' automatically in linux.")
+            csdev_path = "/usr/"
+        else
+            system.exit(0)
+        end
     end
+    csdev_path = csdev_path.split({system.path.delimiter}).at(0)
+    cspkg_log("CSDEV PATH: " + csdev_path)
     var file_reg = regex.build("^.*?(\\w+)\\.(c|cc|cpp|cxx)$")
     var file_name = file_reg.match(source_path)
     cspkg_log("Building module \'" + file_name.str(1) + ".cse\'...")
@@ -907,6 +913,9 @@ function build_compile(source_path, cxx_opts)
 end
 
 function run_build(opt, args)
+    if args.empty()
+        args = {"."}
+    end
     if args.size != 1
         cspkg_log("cspkg: wrong arguments for build command.")
         system.exit(0)
@@ -1081,7 +1090,7 @@ function show_help(opt, args)
         "    remove    | -r  <Package>...  Remove packages\n" +
         "    config    | -c  <Key>         Manage local configuration\n" +
         "    upgrade   | -u                Upgrade local packages\n" +
-        "    build     | -b  <Path>        Build & test local packages\n" +
+        "    build     | -b  [Path]        Build & test local packages\n" +
         "    list      | -l                List current packages\n" +
         "    help      | -h                Show help information\n" +
         "    version   | -v                Show version information\n" +
