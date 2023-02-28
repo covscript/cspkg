@@ -20,7 +20,7 @@ Commands:
     remove    | -r  <Package>...  Remove packages
     config    | -c  <Key>         Manage local configuration
     upgrade   | -u                Upgrade local packages
-    build     | -b  <Path>        Build & test local packages
+    build     | -b  [Path]        Build & test local packages
     list      | -l                List current packages
     help      | -h                Show help information
     version   | -v                Show version information
@@ -41,6 +41,7 @@ Options:
 
   cspkg build
     --install     [Package]...    Install a local package
+    --compile     [Argument]...   Compile extension using CXX compiler
     --release     <Source URL>    Generate package index files for release
     --flat                        Don't create cspkg-repo directory structure
 
@@ -90,7 +91,11 @@ You can:
 + Upload to dedicated server(mostly for releasing purpose)
 
 ### Step 3: Building your package
-If your package is written in Covariant Script, there's no need for extra building. But if you are written and Covariant Script Extension, please follow [CSBuild Instruction](https://github.com/covscript/csbuild#build-your-package-with-csbuild).
+If your package is written in Covariant Script, there's no need for extra building. But if you are writting an Covariant Script Extension, please follow [CSBuild Instruction](https://github.com/covscript/csbuild#build-your-package-with-csbuild).
+
+CSPKG provides lots commands for building and compiling. If you are writting an extension and have `Source` field configured in `csbuild` folders, you can use `cspkg build --install` for auto installation and `cspkg build <FILE> --compile` for single file compilation.
+
+After that, you can use `cspkg build --release <Source URL>` for auto releasing, which can generate a legal file structural for your CSPKG source.
 
 ### Step 4: Submit your Package to CSPKG Source
 1. Fork [CSPKG Source GitHub Repository](https://github.com/covscript/cspkg-sources)
