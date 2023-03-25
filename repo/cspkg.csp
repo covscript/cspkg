@@ -1,3 +1,5 @@
+package cspkg
+
 #!/usr/bin/env cs
 #
 # Covariant Script Package Manager v2.3.5
