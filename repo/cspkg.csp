@@ -1,0 +1,1139 @@
+#
+# Covariant Script Package Manager v2.4.0
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+# Copyright (C) 2017-2023 Michael Lee(李登淳)
+#
+# Email:   lee@unicov.cn, mikecovlee@163.com
+# Github:  https://github.com/mikecovlee
+# Website: http://covscript.org.cn
+#
+# Config File Structural
+#
+# ~/.cspkg
+#   cspkg.log
+#   cspkg.csp
+#   cspkg.json
+#   config.json
+#   packages.json
+#
+
+package cspkg
+
+constant cspkg_version = "2.4.0"
+
+import codec.json as json
+import process
+import regex
+import curl
+
+namespace utils
+    function open_json(path)
+        var ifs = iostream.ifstream(path)
+        return json.to_var(json.from_stream(ifs))
+    end
+    function save_json(val, path)
+        var ofs = iostream.ofstream(path)
+        ofs.print(json.to_string(json.from_var(val)))
+    end
+    var url_reg = regex.build("^[a-zA-z]+://([\\w.]+)[^\\s]*$")
+    function check_url(url)
+        return !utils.url_reg.match(url).empty()
+    end
+    function get_hostname(url)
+        var m = utils.url_reg.match(url)
+        if !m.empty()
+            return m.str(1)
+        else
+            return new string
+        end
+    end
+    constant low_speed_limit = 100
+    function http_get(url)
+        if !utils.check_url(url)
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
+            return null
+        end
+        var buff = new iostream.char_buff
+        var session = curl.make_session_os(buff.get_ostream())
+        session.set_url(url)
+        session.allow_redirect(true)
+        if config.content.exist("proxy")
+            session.set_proxy(config.content.proxy)
+        end
+        session.set_ssl_verify_host(false)
+        session.set_ssl_verify_peer(false)
+        session.set_connect_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_accept_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_low_speed_limit(low_speed_limit)
+        session.set_low_speed_time(config.content.timeout_ms.to_number())
+        if session.perform()
+            return buff.get_string()
+        else
+            return null
+        end
+    end
+    function http_get_file(url, path)
+        if !utils.check_url(url)
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
+            return -2
+        end
+        var ofs = iostream.fstream(path, iostream.openmode.bin_out)
+        if !ofs.good()
+            return -1
+        end
+        var session = curl.make_session_os(ofs)
+        session.set_url(url)
+        session.allow_redirect(true)
+        if config.content.exist("proxy")
+            session.set_proxy(config.content.proxy)
+        end
+        session.set_ssl_verify_host(false)
+        session.set_ssl_verify_peer(false)
+        session.set_connect_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_accept_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_low_speed_limit(low_speed_limit)
+        session.set_low_speed_time(config.content.timeout_ms.to_number())
+        return session.perform() ? 1 : 0
+    end
+end
+
+namespace env
+    var win_ucrt = true
+    function user_home()
+        if system.is_platform_windows()
+            return system.getenv("USERPROFILE")
+        else
+            return system.getenv("HOME")
+        end
+    end
+    function covscript_home()
+        try
+            return system.getenv("COVSCRIPT_HOME")
+        catch e; end
+        if system.is_platform_windows()
+            return env.user_home() + system.path.separator + "Documents" + system.path.separator + "CovScript"
+        end
+        if system.is_platform_linux()
+            return "/usr/share/covscript"
+        end
+        if system.is_platform_darwin()
+            return "/Applications/CovScript.app/Contents/MacOS/covscript"
+        end
+    end
+    function platform()
+        if system.is_platform_windows()
+            if env.win_ucrt
+                return "winucrt"
+            else
+                return "windows"
+            end
+        end
+        if system.is_platform_linux()
+            return "linux"
+        end
+        if system.is_platform_darwin()
+            return "macos"
+        end
+    end
+    @begin
+    var arch_map = {
+        "AMD64" : "x86_64",
+        "ARM64" : "arm64",
+        "x86"   : "i386"
+    }.to_hash_map()
+    @end
+    function arch()
+        if system.is_platform_unix()
+            var p = process.exec("arch", {})
+            return p.out().getline()
+        else
+            var arch_name = system.getenv("PROCESSOR_ARCHITECTURE")
+            if env.arch_map.exist(arch_name)
+                return env.arch_map[arch_name]
+            else
+                throw runtime.exception("Unrecognizable platform name: " + arch_name)
+            end
+        end
+    end
+    function covscript_abi()
+        var abi_reg = regex.build("ABI Version: ([A-Z0-9]{6})")
+        var p = process.exec("cs", {"-v"})
+        var r = null, line = null
+        loop; until !(r = abi_reg.search(line = p.out().getline())).empty()
+        if env.win_ucrt && system.is_platform_windows()
+            return r.str(1) + "_UCRT"
+        else
+            return r.str(1)
+        end
+    end
+end
+
+namespace config
+    var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
+    var reserved_configs = {"proxy"}.to_hash_set()
+    var array_configs = {"source"}.to_hash_set()
+    var default_content = null
+    var content = null
+    var cancel_prompt = false
+    function compose_home()
+        return env.user_home() + system.path.separator + ".cspkg"
+    end
+    function compose_log()
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.log"
+    end
+    function compose_config()
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "config.json"
+    end
+    function compose_packages()
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "packages.json"
+    end
+    function save()
+        utils.save_json(config.content, config.compose_config())
+    end
+    function init()
+        if !system.path.exist(env.covscript_home() + system.path.separator + "imports")
+            system.path.mkdir_p(env.covscript_home() + system.path.separator + "imports")
+        end
+        if config.content == null
+            throw runtime.exception("No configuration detected!")
+        end
+    end
+    function check_local_packages()
+        if !system.file.exist(config.compose_packages()) || !system.path.exist(env.covscript_home() + system.path.separator + "imports")
+            return new hash_map
+        end
+        var packages = utils.open_json(config.compose_packages())
+        var local_pac = new hash_map
+        var p = system.path.scan(env.covscript_home() + system.path.separator + "imports")
+        var reg = regex.build("^(.*)\\.(cse|csp|ecsx)$")
+        foreach it in p
+            if it.type == system.path.type.reg
+                var name = it.name
+                var r = reg.match(name)
+                if !r.empty()
+                    name = r.str(1)
+                    if r.str(2) == "ecsx"
+                        name += ".ecsx"
+                    end
+                    if packages.exist(name)
+                        local_pac.insert(name, packages[name])
+                    else
+                        cspkg_log("cspkg: unknown local package \'" + name + "\'. try cspkg install --import")
+                    end
+                end
+            end
+        end
+        foreach it in packages
+            if !local_pac.exist(it.first)
+                cspkg_log("cspkg: local record of package \'" + it.first + "\' was removed when checking data consistency.")
+            end
+        end
+        utils.save_json(local_pac, config.compose_packages())
+        return local_pac
+    end
+end
+
+namespace log_impl
+    var log = null
+    function open_log()
+        if log_impl.log == null
+            system.path.mkdir_p(config.compose_home())
+            log_impl.log = iostream.fstream(config.compose_log(), iostream.openmode.app)
+        end
+    end
+end
+
+function cspkg_print(msg)
+    if !config.cancel_prompt
+        system.out.println(msg)
+    end
+end
+
+function cspkg_log(msg)
+    log_impl.open_log()
+    system.out.println(msg)
+    log_impl.log.println(msg)
+end
+
+# Command Line Parser
+
+function draw_separator()
+    for i = 1, i <= system.console.terminal_width(), ++i
+        system.out.print("-")
+    end
+    system.out.println("")
+end
+
+class cspkg_install
+    var package_list = new hash_map
+    var package_info = new hash_map
+    var local_pac = null
+    var deps_set = null
+    function fetch_source_url(src_url)
+        cspkg_print("Fetching index from " + utils.get_hostname(src_url) + "...")
+        var source = utils.http_get(src_url)
+        if source == null || source.empty()
+            cspkg_log("cspkg: timeout when fetching index from \"" + src_url + "\"")
+            return
+        end
+        source = json.to_var(json.from_string(source))
+        if source.exist("universal")
+            var url = source.base_url + source.universal
+            var uni_source = utils.http_get(url)
+            if uni_source != null && !uni_source.empty()
+                uni_source = json.to_var(json.from_string(uni_source))
+                foreach it in uni_source
+                    if package_list.exist(it.first)
+                        cspkg_log("cspkg: package index \'" + it.first + "\' existed, skipping...")
+                    else
+                        package_list.insert(it.first, it.second)
+                    end
+                end
+            else
+                cspkg_log("cspkg: timeout when fetching universal source from \"" + src_url + "\"")
+            end
+        end
+        if source.exist(env.platform())
+            if source[env.platform()].exist("universal")
+                var url = source.base_url + source[env.platform()].universal
+                var os_uni_source = utils.http_get(url)
+                if os_uni_source != null && !os_uni_source.empty()
+                    os_uni_source = json.to_var(json.from_string(os_uni_source))
+                    foreach it in os_uni_source
+                        if package_list.exist(it.first)
+                            cspkg_log("cspkg: package index \'" + it.first + "\' existed, skipping...")
+                        else
+                            package_list.insert(it.first, it.second)
+                        end
+                    end
+                else
+                    cspkg_log("cspkg: timeout when fetching " + env.platform() + "/universal source from \"" + src_url + "\"")
+                end
+            end
+            if source[env.platform()].exist(config.content.arch)
+                var url = source.base_url + source[env.platform()][config.content.arch]
+                var os_source = utils.http_get(url)
+                if os_source != null && !os_source.empty()
+                    os_source = json.to_var(json.from_string(os_source))
+                    foreach it in os_source
+                        if package_list.exist(it.first)
+                            cspkg_log("cspkg: package index \'" + it.first + "\' existed, skipping...")
+                        else
+                            package_list.insert(it.first, it.second)
+                        end
+                    end
+                else
+                    cspkg_log("cspkg: timeout when fetching " + env.platform() + "/" + config.content.arch + " source from \"" + src_url + "\"")
+                end
+            end
+        end
+    end
+    function fetch_source()
+        var repos = config.content.source.split({';'})
+        foreach url in repos
+            fetch_source_url(url)
+        end
+    end
+    function find_deps(pac)
+        if deps_set.exist(pac)
+            return
+        end
+        if !package_list.exist(pac)
+            cspkg_log("cspkg: can not find corresponding package information: \'" + pac + "\'.")
+            return
+        end
+        var info = utils.http_get(package_list.at(pac))
+        if info == null || info.empty()
+            cspkg_log("cspkg: timeout when fetching package information: \'" + pac + "\'.")
+            return
+        end
+        info = json.to_var(json.from_string(info))
+        foreach deps in info.Dependencies do find_deps(deps)
+        package_info.insert(pac, info)
+        deps_set.insert(pac)
+    end
+    function check_consistency()
+        if local_pac == null
+            local_pac = config.check_local_packages()
+        end
+        deps_set = new hash_set
+        foreach pac in local_pac
+            foreach dep in pac.second.Dependencies
+                deps_set.insert(dep)
+            end
+        end
+        foreach pac in local_pac
+            if deps_set.exist(pac.first)
+                deps_set.erase(pac.first)
+            end
+        end
+        return deps_set.empty()
+    end
+    function upgrade()
+        deps_set = new hash_set
+        foreach pac in local_pac do find_deps(pac.first)
+        foreach pac in local_pac
+            if deps_set.exist(pac.first)
+                link info = package_info[pac.first]
+                if info.Version <= pac.second.Version
+                    deps_set.erase(pac.first)
+                    if info.Version < pac.second.Version
+                        cspkg_log("cspkg: package \'" + pac.first + "\' existed newer version locally(local: " + pac.second.Version + ", remote: " + info.Version + ")")
+                    end
+                end
+            end
+        end
+        return deps_set.size
+    end
+    function run(opt, args)
+        config.init()
+        var fix_broken = false
+        if !opt.empty()
+            switch opt[0]
+                default
+                    cspkg_log("cspkg: unknown option for install: \'" + opt[0] + "\'.")
+                    system.exit(0)
+                end
+                case "--show-avail"
+                    if opt.size != 1
+                        cspkg_log("cspkg: wrong arguments for install --show-avail command.")
+                        system.exit(0)
+                    end
+                    fetch_source()
+                    local_pac = config.check_local_packages()
+                    var pac_names = new array
+                    foreach it in package_list do pac_names.push_back(it.first)
+                    pac_names.sort([](a, b)->a < b)
+                    var show_promt = false
+                    foreach it in pac_names
+                        if local_pac.exist(it)
+                            show_promt = true
+                            system.out.println("\t*" + it)
+                        else
+                            system.out.println("\t" + it)
+                        end
+                    end
+                    if show_promt
+                        system.out.println("*: installed locally")
+                    end
+                    return
+                end
+                case "--import"
+                    if opt.size != 1
+                        cspkg_log("cspkg: wrong arguments for install --import command.")
+                        system.exit(0)
+                    end
+                    fetch_source()
+                    local_pac = new hash_map
+                    var p = system.path.scan(env.covscript_home() + system.path.separator + "imports")
+                    var reg = regex.build("^(.*)\\.(cse|csp|ecsx)$")
+                    foreach it in p
+                        if it.type == system.path.type.reg
+                            var name = it.name
+                            var r = reg.match(name)
+                            if !r.empty()
+                                name = r.str(1)
+                                if package_list.exist(name)
+                                    var info = utils.http_get(package_list[name])
+                                    if info == null || info.empty()
+                                        cspkg_log("cspkg: timeout when fetching package information: \'" + it.name + "\'.")
+                                    else
+                                        info = json.to_var(json.from_string(info))
+                                        info["FileName"] = it.name
+                                        local_pac.insert(name, info)
+                                        cspkg_log("cspkg: found " + info.Info + "(" + info.Version + ")")
+                                    end
+                                else
+                                    cspkg_log("cspkg: can not find corresponding package information: \'" + it.name + "\'.")
+                                end
+                            end
+                        end
+                    end
+                    utils.save_json(local_pac, config.compose_packages())
+                    if !check_consistency()
+                        cspkg_log("cspkg: dependencies not completed, fixing...")
+                        fix_broken = true
+                    else
+                        return
+                    end
+                end
+                case "--fix"
+                    if opt.size != 1
+                        cspkg_log("cspkg: wrong arguments for install --fix command.")
+                        system.exit(0)
+                    end
+                    if check_consistency()
+                        cspkg_print("cspkg: it's no need to fix dependencies.")
+                        return
+                    else
+                        fetch_source()
+                        fix_broken = true
+                    end
+                end
+            end
+        end
+        var broken_deps = deps_set
+        if !fix_broken
+            if args.empty()
+                cspkg_log("cspkg: wrong arguments for install command.")
+                system.exit(0)
+            end
+            if !check_consistency()
+                cspkg_log("cspkg: broken dependencies. run \'cspkg install --fix\' to fix dependencies.")
+                system.exit(0)
+            end
+            fetch_source()
+            var pac_upgradable = upgrade()
+            if pac_upgradable > 0
+                cspkg_log("cspkg: " + pac_upgradable + " packages can be upgraded. run \'cspkg upgrade\' for upgrading.")
+            end
+        else
+            foreach it in broken_deps do args.push_back(it)
+        end
+        deps_set = new hash_set
+        foreach it in args
+            if !package_list.exist(it)
+                cspkg_log("cspkg: package \'" + it + "\' not existed.")
+                continue
+            end
+            if local_pac.exist(it)
+                cspkg_log("cspkg: package \'" + it + "\' has installed.")
+                continue
+            end
+            find_deps(it)
+        end
+        foreach it in local_pac
+            if deps_set.exist(it.first)
+                deps_set.erase(it.first)
+            end
+        end
+        if deps_set.empty()
+            cspkg_log("cspkg: no packages need to be installed.")
+            return
+        end
+        if !config.cancel_prompt
+            var sorted_list = new array
+            foreach it in deps_set do sorted_list.push_back(it)
+            sorted_list.sort([](a, b)->a < b)
+            system.out.println("Following packages will be installed:")
+            var show_promt = false
+            foreach it in sorted_list
+                if broken_deps != null && broken_deps.exist(it)
+                    show_promt = true
+                    system.out.println("\t*" + it)
+                else
+                    system.out.println("\t" + it)
+                end
+            end
+            if show_promt
+                system.out.println("\n*: broken dependencies")
+            end
+            system.out.println("\nDo you want to continue?[y/n]")
+            if system.console.getch().tolower() != 'y'
+                cspkg_log("cspkg: installation canceled.")
+                system.exit(0)
+            end
+        end
+        foreach it in deps_set
+            link info = package_info[it]
+            cspkg_print("Installing " + info.Info + "...")
+            var reg = regex.build("^.*?(\\w+\\.(cse|csp|ecsx))$")
+            var r = reg.match(info.Target)
+            if r.empty()
+                cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".")
+                continue
+            end
+            var error_value = utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
+            switch error_value
+                case 1
+                    local_pac.insert(it, info)
+                    local_pac[it]["FileName"] = r.str(1)
+                    utils.save_json(local_pac, config.compose_packages())
+                    cspkg_log("cspkg: package \'" + it + "\' installed successfully.")
+                end
+                case 0
+                    cspkg_log("cspkg: package \'" + it + "\' install failed(timeout when download file).")
+                end
+                case -1
+                    cspkg_log("cspkg: package \'" + it + "\' install failed(unable to create file, try run with rights of administrator).")
+                end
+            end
+        end
+    end
+end
+
+function run_install(opt, args)
+    (new cspkg_install).run(opt, args)
+end
+
+class cspkg_upgrade extends cspkg_install
+    function run(opt, args) override
+        config.init()
+        if !this.check_consistency()
+            cspkg_log("cspkg: broken dependencies. run \'cspkg install --fix\' to fix dependencies.")
+            system.exit(0)
+        end
+        this.fetch_source()
+        if this.upgrade() == 0
+            cspkg_log("cspkg: no packages need to be upgrade.")
+            return
+        end
+        if !config.cancel_prompt
+            var sorted_list = new array
+            foreach it in this.deps_set do sorted_list.push_back(it)
+            sorted_list.sort([](a, b)->a < b)
+            system.out.println("Following packages will be upgraded:")
+            var show_promt = false
+            foreach it in sorted_list
+                if !this.local_pac.exist(it)
+                    show_promt = true
+                    system.out.println("\t" + it + "(* -> " + this.package_info[it].Version + ")")
+                else
+                    system.out.println("\t" + it + "(" + this.local_pac[it].Version + " -> " + this.package_info[it].Version + ")")
+                end
+            end
+            if show_promt
+                system.out.println("\n*: additional packages according to dependencies")
+            end
+            system.out.println("\nDo you want to continue?[y/n]")
+            if system.console.getch().tolower() != 'y'
+                cspkg_log("cspkg: upgrade canceled.")
+                system.exit(0)
+            end
+        end
+        foreach pac in this.deps_set
+            link info = this.package_info[pac]
+            cspkg_print("Upgrading " + info.Info + "...")
+            var reg = regex.build("^.*?(\\w+\\.(cse|csp|ecsx))$")
+            var r = reg.match(info.Target)
+            if r.empty()
+                cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".")
+                continue
+            end
+            var error_value = config.minimal_deps.exist(pac) ? 1 : utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
+            switch error_value
+                case 1
+                    this.local_pac[pac] = info
+                    this.local_pac[pac]["FileName"] = r.str(1)
+                    utils.save_json(this.local_pac, config.compose_packages())
+                    cspkg_log("cspkg: package \'" + pac + "\' upgraded successfully.")
+                end
+                case 0
+                    cspkg_log("cspkg: package \'" + pac + "\' install failed(timeout when download file).")
+                end
+                case -1
+                    cspkg_log("cspkg: package \'" + pac + "\' install failed(unable to create file, try run with rights of administrator).")
+                end
+            end
+        end
+    end
+end
+
+function run_upgrade(opt, args)
+    (new cspkg_upgrade).run(opt, args)
+end
+
+function run_remove(opt, args)
+    if system.file.exist(config.compose_packages())
+        var local_pac = config.check_local_packages()
+        var pending_set = new hash_set
+        foreach it in args
+            if local_pac.exist(it)
+                if config.minimal_deps.exist(it)
+                    cspkg_log("cspkg: can not remove package \'" + it + "\' depended by cspkg.")
+                else
+                    pending_set.insert(it)
+                end
+            else
+                cspkg_log("cspkg: package \'" + it + "\' not existed.")
+            end
+        end
+        if pending_set.empty()
+            cspkg_log("cspkg: no packages need to be removed.")
+            return
+        end
+        var support_set = pending_set
+        foreach it in local_pac
+            foreach dep in it.second.Dependencies
+                if pending_set.exist(dep)
+                    support_set.insert(it.first)
+                end
+            end
+        end
+        if !config.cancel_prompt
+            var sorted_list = new array
+            foreach it in support_set do sorted_list.push_back(it)
+            sorted_list.sort([](a, b)->a < b)
+            system.out.println("Following packages will be removed:")
+            var show_promt = false
+            foreach it in sorted_list
+                if !pending_set.exist(it)
+                    show_promt = true
+                    system.out.println("\t*" + it)
+                else
+                    system.out.println("\t" + it)
+                end
+            end
+            if show_promt
+                system.out.println("\n*: removed according to dependencies")
+            end
+            system.out.println("\nDo you want to continue?[y/n]")
+            if system.console.getch().tolower() != 'y'
+                cspkg_log("cspkg: remove canceled.")
+                system.exit(0)
+            end
+        end
+        foreach pac in support_set
+            if system.file.remove(env.covscript_home() + system.path.separator + "imports" + system.path.separator + local_pac[pac].FileName)
+                local_pac.erase(pac)
+                utils.save_json(local_pac, config.compose_packages())
+                cspkg_log("cspkg: package \'" + pac + "\' removed successfully.")
+            else
+                cspkg_log("cspkg: package \'" + pac + "\' remove failed(unable to delete file, try run with rights of administrator).")
+            end
+        end
+    else
+        cspkg_log("cspkg: can not find package information. try \'cspkg install --import\'")
+    end
+end
+
+function build_install(base_path, pacs)
+    var path = base_path + "csbuild"
+    if !system.path.exist(path)
+        cspkg_log("cspkg: configure directory not found in module \'" + base_path + "\'")
+        system.exit(0)
+    end
+    var local_pac = config.check_local_packages()
+    var json_reg = regex.build("^(.*)\\.json$")
+    var files = system.path.scan(path)
+    foreach entry in files
+        if entry.type == system.path.type.reg
+            if !json_reg.match(entry.name).empty()
+                var info = utils.open_json(path + system.path.separator + entry.name)
+                if !pacs.empty()
+                    if pacs.exist(info.Name)
+                        pacs.erase(info.Name)
+                    else
+                        continue
+                    end
+                end
+                if info.Type == "Extension"
+                    if info.exist("Source")
+                        cspkg_print("Source file detected, building...")
+                        build_compile(base_path + system.path.separator + info.Source, "")
+                    end
+                    info.Version += "_ABI" + env.covscript_abi()
+                end
+                cspkg_print("Installing local package " + info.Name + "(" + info.Version + ")...")
+                var file_reg = regex.build("^.*?(\\w+\\.(cse|csp|ecsx))$")
+                var file_name = file_reg.match(info.Target)
+                if file_name.empty() || !system.file.exist(base_path + info.Target)
+                    cspkg_log("cspkg: invalid target in module \'" + base_path + "\'")
+                    continue
+                end
+                if !system.file.copy(base_path + info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + file_name.str(1))
+                    cspkg_log("cspkg: package \'" + info.Name + "\' install failed(unable to create file, try run with rights of administrator).")
+                    continue
+                end
+                info.erase("Type")
+                info["FileName"] = file_name.str(1)
+                info.Target = "<LOCAL_PAC>"
+                local_pac.insert(info.Name, info)
+                utils.save_json(local_pac, config.compose_packages())
+                cspkg_log("cspkg: package \'" + info.Name + "\' installed successfully.")
+            end
+        end
+    end
+    var deps_set = new hash_set
+    foreach pac in local_pac
+        foreach dep in pac.second.Dependencies
+            deps_set.insert(dep)
+        end
+    end
+    foreach pac in local_pac
+        if deps_set.exist(pac.first)
+            deps_set.erase(pac.first)
+        end
+    end
+    if !deps_set.empty()
+        cspkg_log("cspkg: broken dependencies. run \'cspkg install --fix\' to fix dependencies.")
+    end
+    foreach it in pacs
+        cspkg_log("cspkg: package \'" + it + "\' not existed.")
+    end
+end
+
+function build_release(base_path, url, flat)
+    var path = base_path + "csbuild"
+    if !utils.check_url(url)
+        cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
+        system.exit(0)
+    end
+    if url[-1] != '/'
+        url += '/'
+    end
+    if !system.path.exist(path)
+        cspkg_log("cspkg: configure directory not found in module \'" + base_path + "\'")
+        system.exit(0)
+    end
+    var idx_path = base_path, pkg_path = base_path, idx_os_path = base_path, pkg_os_path = base_path
+    if !flat
+        idx_path = base_path + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + "universal"
+        pkg_path = base_path + "cspkg-repo" + system.path.separator + "universal"
+        idx_os_path = base_path + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + env.platform() + system.path.separator + env.arch()
+        pkg_os_path = base_path + "cspkg-repo" + system.path.separator + env.platform() + system.path.separator + env.arch()
+    end
+    var json_reg = regex.build("^(.*)\\.json$")
+    var files = system.path.scan(path)
+    foreach entry in files
+        if entry.type == system.path.type.reg
+            if !json_reg.match(entry.name).empty()
+                var info = utils.open_json(path + system.path.separator + entry.name)
+                if info.Type == "Extension"
+                    info.Version += "_ABI" + env.covscript_abi()
+                end
+                cspkg_print("Building package " + info.Name + "(" + info.Version + ")...")
+                var file_reg = regex.build("^.*?(\\w+\\.(cse|csp|ecsx))$")
+                var file_name = file_reg.match(info.Target)
+                if file_name.empty() || !system.file.exist(base_path + info.Target)
+                    cspkg_log("cspkg: invalid target in module \'" + base_path + "\'")
+                    continue
+                end
+                if info.Type == "Extension"
+                    system.path.mkdir_p(idx_os_path)
+                    system.path.mkdir_p(pkg_os_path)
+                    system.file.copy(base_path + info.Target, pkg_os_path + system.path.separator + file_name.str(1))
+                    if flat
+                        info.Target = url + file_name.str(1)
+                    else
+                        info.Target = url + env.platform() + "/" + env.arch() + "/" + file_name.str(1)
+                    end
+                    info.erase("Type")
+                    utils.save_json(info, idx_os_path + system.path.separator + info.Name + ".json")
+                    continue
+                end
+                if info.Type == "Package"
+                    system.path.mkdir_p(idx_path)
+                    system.path.mkdir_p(pkg_path)
+                    system.file.copy(base_path + info.Target, pkg_path + system.path.separator + file_name.str(1))
+                    if flat
+                        info.Target = url + file_name.str(1)
+                    else
+                        info.Target = url + "universal/" + file_name.str(1)
+                    end
+                    info.erase("Type")
+                    utils.save_json(info, idx_path + system.path.separator + info.Name + ".json")
+                end
+            end
+        end
+    end
+end
+
+function build_compile(source_path, cxx_opts)
+    if !system.file.exist(source_path)
+        cspkg_log("cspkg: target file \'" + source_path + "\' not found.")
+        system.exit(0)
+    end
+    block
+        var sys_paths = system.getenv("PATH").split({system.path.delimiter})
+        var found_cxx = false
+        foreach it in sys_paths
+            if system.path.exist(it)
+                var entries = system.path.scan(it)
+                foreach entry in entries
+                    if entry.type != system.path.type.dir && (entry.name == "g++" || entry.name == "g++.exe")
+                        cspkg_log("CXX PATH:   " + it + system.path.separator + entry.name)
+                        found_cxx = true
+                        break
+                    end
+                end
+            end
+            if found_cxx
+                break
+            end
+        end
+        if !found_cxx
+            cspkg_log("cspkg: can't find CXX compiler")
+            system.exit(0)
+        end
+    end
+    var csdev_path = null
+    try
+        csdev_path = system.getenv("CS_DEV_PATH")
+    catch e
+        cspkg_log("cspkg: can't find environment variable of CovScript SDK \'CS_DEV_PATH\'")
+        if system.is_platform_linux() && system.file.exist("/usr/lib/libcovscript.a")
+            cspkg_log("cspkg: set \'CS_DEV_PATH\' to \'/usr/\' automatically in linux.")
+            csdev_path = "/usr/"
+        else
+            system.exit(0)
+        end
+    end
+    csdev_path = csdev_path.split({system.path.delimiter}).at(0)
+    cspkg_log("CSDEV PATH: " + csdev_path)
+    var file_reg = regex.build("^.*?(\\w+)\\.(c|cc|cpp|cxx)$")
+    var file_name = file_reg.match(source_path)
+    cspkg_log("Building module \'" + file_name.str(1) + ".cse\'...")
+    system.run("g++ -std=c++14 --shared -fPIC -O3 -I\"" + csdev_path + system.path.separator + "include\" \"" + source_path + "\" -L\"" + csdev_path + system.path.separator + "lib\" -lcovscript -o " + file_name.str(1) + ".cse " + cxx_opts)
+end
+
+function run_build(opt, args)
+    if args.empty()
+        args = {"."}
+    end
+    if args.size != 1
+        cspkg_log("cspkg: wrong arguments for build command.")
+        system.exit(0)
+    end
+    var base_path = args[0], flat = false
+    if base_path[-1] != system.path.separator
+        base_path += system.path.separator
+    end
+    for it = opt.begin, it != opt.end, null
+        if it.data == "--flat"
+            it = opt.erase(it)
+            if !flat
+                flat = true
+            else
+                cspkg_log("cspkg: duplicated option \'--flat\'")
+            end
+        else
+            it.next()
+        end
+    end
+    if !opt.empty()
+        switch opt[0]
+            default
+                cspkg_log("cspkg: unknown option for build: \'" + opt[0] + "\'.")
+                system.exit(0)
+            end
+            case "--install"
+                var pacs = new hash_set
+                for i = 1, i < opt.size, ++i do pacs.insert(opt[i])
+                build_install(base_path, pacs)
+            end
+            case "--release"
+                if opt.size != 2
+                    cspkg_log("cspkg: wrong arguments for build --release command.")
+                    system.exit(0)
+                end
+                build_release(base_path, opt[1], flat)
+            end
+            case "--compile"
+                var cxx_opts = new string
+                for i = 1, i < opt.size, ++i do cxx_opts += opt[i] + " "
+                build_compile(args[0], cxx_opts)
+            end
+        end
+    else
+        cspkg_log("cspkg: no option for \'cspkg build\'. see \'cspkg help\'")
+    end
+end
+
+function run_config(opt, args)
+    if args.size != 1
+        cspkg_log("cspkg: wrong arguments for config command.")
+        system.exit(0)
+    end
+    config.init()
+    if !config.content.exist(args[0]) && !config.reserved_configs.exist(args[0])
+        cspkg_log("cspkg: key \'" + args[0] + "\' does not exists.")
+        system.exit(0)
+    end
+    if !opt.empty()
+        switch opt[0]
+            default
+                cspkg_log("cspkg: unknown option for config: \'" + opt[0] + "\'.")
+                system.exit(0)
+            end
+            case "--set"
+                if opt.size != 2
+                    cspkg_log("cspkg: wrong arguments for config --set command.")
+                    system.exit(0)
+                end
+                config.content[args[0]] = opt[1]
+                config.save()
+            end
+            case "--app"
+                if opt.size != 2
+                    cspkg_log("cspkg: wrong arguments for config --app command.")
+                    system.exit(0)
+                end
+                if config.array_configs.exist(args[0])
+                    link cfg = config.content[args[0]]
+                    var arr = cfg.split({';'})
+                    cfg = new string
+                    foreach it in arr
+                        if it == opt[1]
+                            cspkg_log("cspkg: value existed in \'" + args[0] + "\'.")
+                            system.exit(0)
+                        end
+                        cfg += it + ";"
+                    end
+                    cfg += opt[1]
+                    config.save()
+                else
+                    cspkg_log("cspkg: can not append to non-array config \'" + args[0] + "\'.")
+                    system.exit(0)
+                end
+            end
+            case "--unset"
+                if opt.size != 1
+                    cspkg_log("cspkg: wrong arguments for config --unset command.")
+                    system.exit(0)
+                end
+                if config.default_content.exist(args[0])
+                    config.content[args[0]] = config.default_content[args[0]]
+                else
+                    config.content.erase(args[0])
+                end
+                config.save()
+            end
+        end
+    end
+    if config.reserved_configs.exist(args[0]) && !config.content.exist(args[0])
+        cspkg_print("\'" + args[0] + "\' is not set")
+    else
+        cspkg_print(args[0] + " = " + config.content[args[0]])
+    end    
+end
+
+function list_packages(opt, args)
+    if system.file.exist(config.compose_packages())
+        var packages = config.check_local_packages()
+        block
+            var oldt = packages
+            packages = new array
+            foreach it in oldt
+                packages.push_back(it)
+            end
+            packages.sort([](a, b)->a.first < b.first)
+        end
+        system.out.println("Installed Packages")
+        draw_separator()
+        var max_size_c0 = 0
+        foreach it in packages
+            if it.first.size > max_size_c0
+                max_size_c0 = it.first.size
+            end
+        end
+        system.out.print("Name")
+        foreach i in range(max_size_c0) do system.out.print(" ")
+        var max_size_c1 = 0
+        foreach it in packages
+            if it.second.Version.size > max_size_c1
+                max_size_c1 = it.second.Version.size
+            end
+        end
+        system.out.print("Version")
+        if max_size_c1 < 7
+            max_size_c1 = 7
+        end
+        foreach i in range(max_size_c1 - 3) do system.out.print(" ")
+        system.out.println("Description")
+        draw_separator()
+        foreach it in packages
+            system.out.print(it.first)
+            foreach i in range(max_size_c0 - it.first.size) do system.out.print(" ")
+            system.out.print("    ")
+            system.out.print(it.second.Version)
+            foreach i in range(max_size_c1 - it.second.Version.size) do system.out.print(" ")
+            system.out.print("    ")
+            system.out.println(it.second.Info)
+        end
+    else
+        cspkg_log("cspkg: can not find package information. try \'cspkg install --import\'")
+    end
+end
+
+function show_help(opt, args)
+@begin
+    system.out.println(
+        "Usage: cspkg <commands> ... [options] ...\n" +
+        "\nCommands:\n" +
+        "    install   | -i  <Package>...  Install packages from remote source\n" +
+        "    remove    | -r  <Package>...  Remove packages\n" +
+        "    config    | -c  <Key>         Manage local configuration\n" +
+        "    upgrade   | -u                Upgrade local packages\n" +
+        "    build     | -b  [Path]        Build & test local packages\n" +
+        "    list      | -l                List current packages\n" +
+        "    help      | -h                Show help information\n" +
+        "    version   | -v                Show version information\n" +
+        "\nOptions:\n" +
+        "  General\n" +
+        "    --yes                         Cancel the prompt\n\n" +
+        "  cspkg install\n" +
+        "    --fix                         Fix broken dependencies\n" +
+        "    --import                      Scanning local CovScript packages\n" +
+        "    --show-avail                  Show available CovScript packages in remote source\n\n" +
+        "  cspkg config\n" +
+        "    --set         <Value>         Set a configuration key\n" +
+        "    --app         <Value>         Append to a configuration key\n" +
+        "    --unset                       Restore a configuration key to default\n\n" +
+        "  cspkg build\n" +
+        "    --install     [Package]...    Install a local package\n" +
+        "    --compile     [Argument]...   Compile extension using CXX compiler\n" +
+        "    --release     <Source URL>    Generate package index files for release\n" +
+        "    --flat                        Don't create cspkg-repo directory structure\n"
+    )
+@end
+end
+
+function show_version(opt, args)
+@begin
+    system.out.println(
+        "Covariant Script Package Manager " + cspkg_version + "\n" +
+        "\nEnvironment Variables:\n" +
+        "            OS: " + env.platform() + "\n" +
+        "          ARCH: " + env.arch() + "\n" +
+        "     USER_HOME: " + env.user_home() + "\n" +
+        "COVSCRIPT_HOME: " + env.covscript_home() + "\n"
+    )
+@end
+end
+
+function command_error(cmd)
+    cspkg_log("cspkg: \'" + cmd + "\' is not a cspkg command. see \'cspkg help\'")
+end
+
+@begin
+var cspkg_cmds = {
+    "install" : run_install,
+    "-i" : run_install,
+    "upgrade" : run_upgrade,
+    "-u" : run_upgrade,
+    "remove" : run_remove,
+    "-r" : run_remove,
+    "config" : run_config,
+    "-c" : run_config,
+    "build" : run_build,
+    "-b" : run_build,
+    "list" : list_packages,
+    "-l" : list_packages,
+    "help" : show_help,
+    "-h" : show_help,
+    "version" : show_version,
+    "-v" : show_version
+}.to_hash_map()
+@end
+
+function main(cmd, cspkg_options, cspkg_args)
+    var target_function = cspkg_cmds[cmd]
+    if target_function == 0
+        command_error(cmd)
+        system.exit(0)
+    end
+    target_function(cspkg_options, cspkg_args)
+end
