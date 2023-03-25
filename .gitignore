@@ -8,3 +8,5 @@ imgui.ini
 .idea/
 # CSBuild Files
 build/
+# macOS Junk
+.DS_Store
