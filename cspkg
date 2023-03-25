@@ -6,6 +6,14 @@ import regex
 import curl
 
 namespace utils
+    function open_json(path)
+        var ifs = iostream.ifstream(path)
+        return json.to_var(json.from_stream(ifs))
+    end
+    function save_json(val, path)
+        var ofs = iostream.ofstream(path)
+        ofs.print(json.to_string(json.from_var(val)))
+    end
     var url_reg = regex.build("^[a-zA-z]+://([\\w.]+)[^\\s]*$")
     function check_url(url)
         return !utils.url_reg.match(url).empty()
@@ -69,6 +77,7 @@ namespace utils
 end
 
 namespace env
+    var win_ucrt = true
     function user_home()
         if system.is_platform_windows()
             return system.getenv("USERPROFILE")
@@ -90,23 +99,99 @@ namespace env
             return "/Applications/CovScript.app/Contents/MacOS/covscript"
         end
     end
+    function platform()
+        if system.is_platform_windows()
+            if env.win_ucrt
+                return "winucrt"
+            else
+                return "windows"
+            end
+        end
+        if system.is_platform_linux()
+            return "linux"
+        end
+        if system.is_platform_darwin()
+            return "macos"
+        end
+    end
+    @begin
+    var arch_map = {
+        "AMD64" : "x86_64",
+        "ARM64" : "arm64",
+        "x86"   : "i386"
+    }.to_hash_map()
+    @end
+    function arch()
+        if system.is_platform_unix()
+            var p = process.exec("arch", {})
+            return p.out().getline()
+        else
+            var arch_name = system.getenv("PROCESSOR_ARCHITECTURE")
+            if env.arch_map.exist(arch_name)
+                return env.arch_map[arch_name]
+            else
+                throw runtime.exception("Unrecognizable platform name: " + arch_name)
+            end
+        end
+    end
+    function covscript_abi()
+        var abi_reg = regex.build("ABI Version: ([A-Z0-9]{6})")
+        var p = process.exec("cs", {"-v"})
+        var r = null, line = null
+        loop; until !(r = abi_reg.search(line = p.out().getline())).empty()
+        if env.win_ucrt && system.is_platform_windows()
+            return r.str(1) + "_UCRT"
+        else
+            return r.str(1)
+        end
+    end
 end
 
 namespace config
+    @begin
+    var default_content = {
+        "arch" : env.arch(),
+        "home" : env.covscript_home(),
+        "timeout_ms" : "3000",
+    #   "proxy" : ""
+        "source" : "http://mirrors.covariant.cn/cspkg_nightly/index.json"
+    }.to_hash_map()
+    @end
+    var content = null
     var cancel_prompt = false
-    var source = "http://mirrors.covariant.cn/cspkg/index.json"
     function compose_home()
         return env.user_home() + system.path.separator + ".cspkg"
-    end
-    function compose_cspkg()
-        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.csp"
     end
     function compose_log()
         return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.log"
     end
-    function init()
+    function compose_config()
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "config.json"
+    end
+    function compose_cspkg_info()
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.json"
+    end
+    function compose_cspkg_package()
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.csp"
+    end
+    function save()
+        utils.save_json(config.content, config.compose_config())
+    end
+    function create()
+        system.path.mkdir_p(config.compose_home())
         if !system.file.exist(config.compose_config())
-            system.path.mkdir_p(config.compose_home())
+            config.save()
+        end
+    end
+    function init()
+        if !system.path.exist(env.covscript_home() + system.path.separator + "imports")
+            system.path.mkdir_p(env.covscript_home() + system.path.separator + "imports")
+        end
+        if !system.file.exist(config.compose_config())
+            config.content = config.default_content
+            config.create()
+        else
+            config.content = utils.open_json(config.compose_config())
         end
     end
 end
@@ -133,40 +218,79 @@ function cspkg_log(msg)
     log_impl.log.println(msg)
 end
 
-function cspkg_main(opt, args)
-    config.init()
-    if !opt.empty()
-        switch opt[0]
-            default
-                cspkg_log("cspkg: unknown option: \'" + opt[0] + "\'.")
+function cspkg_main(borken)
+    cspkg_print("Fetching source from " + utils.get_hostname(config.content.source) + "...")
+    var source = utils.http_get(config.content.source)
+    if source == null || source.empty()
+        cspkg_log("cspkg: timeout when fetching index from \"" + config.content.source + "\"")
+        return
+    end
+    source = json.to_var(json.from_string(source))
+    if !source.exist("dependencies") || !source.dependencies.exist("cspkg")
+        cspkg_log("cspkg: outdated source on " + utils.get_hostname(config.content.source))
+        return
+    end
+    var remote_info = source.dependencies.cspkg
+    if !system.file.exist(config.compose_cspkg_info())
+        if !config.cancel_prompt
+            if borken
+                system.out.println("Installing cspkg...")
+            else
+                system.out.println("Fix broken cspkg installation...")
+            end
+            system.out.println("Do you want to continue?[y/n]")
+            if system.console.getch().tolower() != 'y'
+                cspkg_log("cspkg: installation canceled.")
                 system.exit(0)
             end
-            case "--source"
-                if args.size != 1
-                    cspkg_log("cspkg: wrong arguments.")
-                    system.exit(0)
+        end
+    else
+        var local_info = utils.open_json(config.compose_cspkg_info())
+        if remote_info.Version > local_info.Version
+            if !config.cancel_prompt
+                system.out.println("Detect newer version for cspkg: " + remote_info.Version)
+                system.out.println("Do you want to continue?[y/n]")
+                if system.console.getch().tolower() != 'y'
+                    cspkg_log("cspkg: installation canceled.")
+                    return
                 end
             end
+        else
+            if borken
+                cspkg_print("Fix broken cspkg installation...")
+            else
+                return
+            end
+        end
+    end
+    var error_value = utils.http_get_file(remote_info.Target, config.compose_cspkg_package())
+    switch error_value
+        case 1
+            utils.save_json(remote_info, config.compose_cspkg_info())
+            if borken
+                cspkg_log("cspkg: installation successfully.")
+            else
+                cspkg_log("cspkg: local installation has been upgraded to " + remote_info.Version)
+            end
+        end
+        case 0
+            cspkg_log("cspkg: timeout when download file.")
+        end
+        case -1
+            cspkg_log("cspkg: unable to create file, try run with rights of administrator.")
         end
     end
 end
 
-var cspkg = context.source_import(config.compose_cspkg())
-var cmd_args = context.cmd_args
-
-if cspkg != null && cmd_args.size == 1
-    cspkg.show_help(null, null)
-    system.exit(0)
-end
-
-var cspkg_options = {}
-var cspkg_args = {}
-
 # Processing CLI Args
 
+var cspkg_options = {}
+var cspkg_args    = {}
+var cmd_args      = context.cmd_args
+
 block
-    var idx = (cspkg == null ? 1 : 2)
-    while idx != cmd_args.size
+    var idx = 2
+    while idx < cmd_args.size
         if cmd_args[idx].find("--", 0) != 0
             cspkg_args.push_back(cmd_args[idx])
         else
@@ -174,7 +298,7 @@ block
         end
         ++idx
     end
-    while idx != cmd_args.size
+    while idx < cmd_args.size
         if cmd_args[idx] == "--yes"
             config.cancel_prompt = true
         else
@@ -184,8 +308,19 @@ block
     end
 end
 
+var cspkg = context.source_import(config.compose_cspkg_package())
+config.init()
+cspkg_main(cspkg == null)
+cspkg = context.source_import(config.compose_cspkg_package())
 if cspkg == null
-    cspkg_main(cspkg_options, cspkg_args)
-else
-    cspkg.main(cmd_args[1], cspkg_options, cspkg_args)
+    cspkg_log("cspkg: broken cspkg installation.")
+    system.exit(0)
 end
+if cmd_args.size == 1
+    cspkg.show_help(null, null)
+    system.exit(0)
+end
+cspkg.config.content = config.content
+cspkg.config.default_content = config.default_content
+cspkg.config.cancel_prompt = config.cancel_prompt
+cspkg.main(cmd_args[1], cspkg_options, cspkg_args)

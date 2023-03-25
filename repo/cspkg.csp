@@ -23,6 +23,8 @@
 #
 # ~/.cspkg
 #   cspkg.log
+#   cspkg.csp
+#   cspkg.json
 #   config.json
 #   packages.json
 #
@@ -189,17 +191,9 @@ end
 
 namespace config
     var minimal_deps = {"codec", "process", "regex", "curl"}.to_hash_set()
-    @begin
-    var default_content = {
-        "arch" : env.arch(),
-        "home" : env.covscript_home(),
-        "timeout_ms" : "3000",
-    #   "proxy" : ""
-        "source" : "http://mirrors.covariant.cn/cspkg/index.json"
-    }.to_hash_map()
-    @end
-    var array_configs = {"source"}.to_hash_set()
     var reserved_configs = {"proxy"}.to_hash_set()
+    var array_configs = {"source"}.to_hash_set()
+    var default_content = null
     var content = null
     var cancel_prompt = false
     function compose_home()
@@ -217,21 +211,12 @@ namespace config
     function save()
         utils.save_json(config.content, config.compose_config())
     end
-    function create()
-        system.path.mkdir_p(config.compose_home())
-        if !system.file.exist(config.compose_config())
-            config.save()
-        end
-    end
     function init()
         if !system.path.exist(env.covscript_home() + system.path.separator + "imports")
             system.path.mkdir_p(env.covscript_home() + system.path.separator + "imports")
         end
-        if !system.file.exist(config.compose_config())
-            config.content = config.default_content
-            config.create()
-        else
-            config.content = utils.open_json(config.compose_config())
+        if config.content == null
+            throw runtime.exception("No configuration detected!")
         end
     end
     function check_local_packages()
@@ -1156,7 +1141,7 @@ var cspkg_cmds = {
 function main(cmd, cspkg_options, cspkg_args)
     var target_function = cspkg_cmds[cmd]
     if target_function == 0
-        command_error(cmd_args[1])
+        command_error(cmd)
         system.exit(0)
     end
     target_function(cspkg_options, cspkg_args)
