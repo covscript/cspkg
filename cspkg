@@ -1,0 +1,191 @@
+#!/usr/bin/env cs
+@require: 210505
+
+import codec.json as json
+import regex
+import curl
+
+namespace utils
+    var url_reg = regex.build("^[a-zA-z]+://([\\w.]+)[^\\s]*$")
+    function check_url(url)
+        return !utils.url_reg.match(url).empty()
+    end
+    function get_hostname(url)
+        var m = utils.url_reg.match(url)
+        if !m.empty()
+            return m.str(1)
+        else
+            return new string
+        end
+    end
+    constant low_speed_limit = 100
+    function http_get(url)
+        if !utils.check_url(url)
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
+            return null
+        end
+        var buff = new iostream.char_buff
+        var session = curl.make_session_os(buff.get_ostream())
+        session.set_url(url)
+        session.allow_redirect(true)
+        if config.content.exist("proxy")
+            session.set_proxy(config.content.proxy)
+        end
+        session.set_ssl_verify_host(false)
+        session.set_ssl_verify_peer(false)
+        session.set_connect_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_accept_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_low_speed_limit(low_speed_limit)
+        session.set_low_speed_time(config.content.timeout_ms.to_number())
+        if session.perform()
+            return buff.get_string()
+        else
+            return null
+        end
+    end
+    function http_get_file(url, path)
+        if !utils.check_url(url)
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
+            return -2
+        end
+        var ofs = iostream.fstream(path, iostream.openmode.bin_out)
+        if !ofs.good()
+            return -1
+        end
+        var session = curl.make_session_os(ofs)
+        session.set_url(url)
+        session.allow_redirect(true)
+        if config.content.exist("proxy")
+            session.set_proxy(config.content.proxy)
+        end
+        session.set_ssl_verify_host(false)
+        session.set_ssl_verify_peer(false)
+        session.set_connect_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_accept_timeout_ms(config.content.timeout_ms.to_number())
+        session.set_low_speed_limit(low_speed_limit)
+        session.set_low_speed_time(config.content.timeout_ms.to_number())
+        return session.perform() ? 1 : 0
+    end
+end
+
+namespace env
+    function user_home()
+        if system.is_platform_windows()
+            return system.getenv("USERPROFILE")
+        else
+            return system.getenv("HOME")
+        end
+    end
+    function covscript_home()
+        try
+            return system.getenv("COVSCRIPT_HOME")
+        catch e; end
+        if system.is_platform_windows()
+            return env.user_home() + system.path.separator + "Documents" + system.path.separator + "CovScript"
+        end
+        if system.is_platform_linux()
+            return "/usr/share/covscript"
+        end
+        if system.is_platform_darwin()
+            return "/Applications/CovScript.app/Contents/MacOS/covscript"
+        end
+    end
+end
+
+namespace config
+    var cancel_prompt = false
+    var source = "http://mirrors.covariant.cn/cspkg/index.json"
+    function compose_home()
+        return env.user_home() + system.path.separator + ".cspkg"
+    end
+    function compose_cspkg()
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.csp"
+    end
+    function compose_log()
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.log"
+    end
+    function init()
+        if !system.file.exist(config.compose_config())
+            system.path.mkdir_p(config.compose_home())
+        end
+    end
+end
+
+namespace log_impl
+    var log = null
+    function open_log()
+        if log_impl.log == null
+            system.path.mkdir_p(config.compose_home())
+            log_impl.log = iostream.fstream(config.compose_log(), iostream.openmode.app)
+        end
+    end
+end
+
+function cspkg_print(msg)
+    if !config.cancel_prompt
+        system.out.println(msg)
+    end
+end
+
+function cspkg_log(msg)
+    log_impl.open_log()
+    system.out.println(msg)
+    log_impl.log.println(msg)
+end
+
+function cspkg_main(opt, args)
+    config.init()
+    if !opt.empty()
+        switch opt[0]
+            default
+                cspkg_log("cspkg: unknown option: \'" + opt[0] + "\'.")
+                system.exit(0)
+            end
+            case "--source"
+                if args.size != 1
+                    cspkg_log("cspkg: wrong arguments.")
+                    system.exit(0)
+                end
+            end
+        end
+    end
+end
+
+var cspkg = context.source_import(config.compose_cspkg())
+var cmd_args = context.cmd_args
+
+if cspkg != null && cmd_args.size == 1
+    cspkg.show_help(null, null)
+    system.exit(0)
+end
+
+var cspkg_options = {}
+var cspkg_args = {}
+
+# Processing CLI Args
+
+block
+    var idx = (cspkg == null ? 1 : 2)
+    while idx != cmd_args.size
+        if cmd_args[idx].find("--", 0) != 0
+            cspkg_args.push_back(cmd_args[idx])
+        else
+            break
+        end
+        ++idx
+    end
+    while idx != cmd_args.size
+        if cmd_args[idx] == "--yes"
+            config.cancel_prompt = true
+        else
+            cspkg_options.push_back(cmd_args[idx])
+        end
+        ++idx
+    end
+end
+
+if cspkg == null
+    cspkg_main(cspkg_options, cspkg_args)
+else
+    cspkg.main(cmd_args[1], cspkg_options, cspkg_args)
+end

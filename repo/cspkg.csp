@@ -1,8 +1,5 @@
-package cspkg
-
-#!/usr/bin/env cs
 #
-# Covariant Script Package Manager v2.3.5
+# Covariant Script Package Manager v2.4.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -30,7 +27,9 @@ package cspkg
 #   packages.json
 #
 
-constant cspkg_version = "2.3.5"
+package cspkg
+
+constant cspkg_version = "2.4.0"
 
 import codec.json as json
 import process
@@ -1133,13 +1132,6 @@ function command_error(cmd)
     cspkg_log("cspkg: \'" + cmd + "\' is not a cspkg command. see \'cspkg help\'")
 end
 
-var cmd_args = context.cmd_args
-
-if cmd_args.size == 1
-    show_help(null, null)
-    system.exit(0)
-end
-
 @begin
 var cspkg_cmds = {
     "install" : run_install,
@@ -1161,36 +1153,11 @@ var cspkg_cmds = {
 }.to_hash_map()
 @end
 
-var cspkg_options = {}
-var cspkg_args = {}
-
-# Processing CLI Args
-
-var target_function = cspkg_cmds[cmd_args[1]]
-
-if target_function == 0
-    command_error(cmd_args[1])
-    system.exit(0)
-end
-
-block
-    var idx = 2
-    while idx != cmd_args.size
-        if cmd_args[idx].find("--", 0) != 0
-            cspkg_args.push_back(cmd_args[idx])
-        else
-            break
-        end
-        ++idx
+function main(cmd, cspkg_options, cspkg_args)
+    var target_function = cspkg_cmds[cmd]
+    if target_function == 0
+        command_error(cmd_args[1])
+        system.exit(0)
     end
-    while idx != cmd_args.size
-        if cmd_args[idx] == "--yes"
-            config.cancel_prompt = true
-        else
-            cspkg_options.push_back(cmd_args[idx])
-        end
-        ++idx
-    end
+    target_function(cspkg_options, cspkg_args)
 end
-
-target_function(cspkg_options, cspkg_args)
