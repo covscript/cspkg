@@ -175,7 +175,7 @@ namespace config
         "home" : env.covscript_home(),
         "timeout_ms" : "3000",
     #   "proxy" : ""
-        "source" : "http://mirrors.covariant.cn/cspkg_nightly/index.json"
+        "source" : "http://mirrors.covariant.cn/cspkg/index.json"
     }.to_hash_map()
     @end
     var content = null
