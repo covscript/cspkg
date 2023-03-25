@@ -47,15 +47,6 @@ namespace utils
         var ofs = iostream.ofstream(path)
         ofs.print(json.to_string(json.from_var(val)))
     end
-    function filter(str, cond)
-        var _s = ""
-        foreach ch in str
-            if cond(ch)
-                _s += ch
-            end
-        end
-        return move(_s)
-    end
     var url_reg = regex.build("^[a-zA-z]+://([\\w.]+)[^\\s]*$")
     function check_url(url)
         return !utils.url_reg.match(url).empty()
