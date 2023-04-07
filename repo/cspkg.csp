@@ -1,5 +1,5 @@
 #
-# Covariant Script Package Manager v2.4.1
+# Covariant Script Package Manager v2.4.2
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.4.1"
+constant cspkg_version = "2.4.2"
 
 import codec.json as json
 import process
@@ -995,15 +995,14 @@ function run_config(opt, args)
                 if config.array_configs.exist(args[0])
                     link cfg = config.content[args[0]]
                     var arr = cfg.split({';'})
-                    cfg = new string
+                    cfg = opt[1]
                     foreach it in arr
                         if it == opt[1]
                             cspkg_log("cspkg: value existed in \'" + args[0] + "\'.")
                             system.exit(0)
                         end
-                        cfg += it + ";"
+                        cfg += ";" + it
                     end
-                    cfg += opt[1]
                     config.save()
                 else
                     cspkg_log("cspkg: can not append to non-array config \'" + args[0] + "\'.")
