@@ -1,5 +1,5 @@
 #
-# Covariant Script Package Manager v2.4.0
+# Covariant Script Package Manager v2.4.1
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.4.0"
+constant cspkg_version = "2.4.1"
 
 import codec.json as json
 import process
@@ -581,20 +581,41 @@ end
 class cspkg_upgrade extends cspkg_install
     function run(opt, args) override
         config.init()
+        if !args.empty()
+            cspkg_log("cspkg: unknown arguments for upgrade.")
+            system.exit(0)
+        end
+        var retread = false
+        if !opt.empty()
+            switch opt[0]
+                default
+                    cspkg_log("cspkg: unknown option for upgrade: \'" + opt[0] + "\'.")
+                    system.exit(0)
+                end
+                case "--retread"
+                    retread = true
+                end
+            end
+        end
         if !this.check_consistency()
             cspkg_log("cspkg: broken dependencies. run \'cspkg install --fix\' to fix dependencies.")
             system.exit(0)
         end
         this.fetch_source()
-        if this.upgrade() == 0
-            cspkg_log("cspkg: no packages need to be upgrade.")
-            return
+        if retread
+            this.deps_set = new hash_set
+            foreach pac in this.local_pac do this.find_deps(pac.first)
+        else
+            if this.upgrade() == 0
+                cspkg_log("cspkg: no packages need to be upgrade.")
+                return
+            end
         end
         if !config.cancel_prompt
             var sorted_list = new array
             foreach it in this.deps_set do sorted_list.push_back(it)
             sorted_list.sort([](a, b)->a < b)
-            system.out.println("Following packages will be upgraded:")
+            system.out.println("Following packages will be " + (retread ? "retreaded:" : "upgraded:"))
             var show_promt = false
             foreach it in sorted_list
                 if !this.local_pac.exist(it)
@@ -1078,6 +1099,8 @@ function show_help(opt, args)
         "    --fix                         Fix broken dependencies\n" +
         "    --import                      Scanning local CovScript packages\n" +
         "    --show-avail                  Show available CovScript packages in remote source\n\n" +
+        "  cspkg upgrade\n" +
+        "    --retread                     Retread all local packages and their dependencies\n\n" +
         "  cspkg config\n" +
         "    --set         <Value>         Set a configuration key\n" +
         "    --app         <Value>         Append to a configuration key\n" +
