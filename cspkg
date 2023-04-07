@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
 #
-# Covariant Script Package Manager Launcher v1.0.0
+# Covariant Script Package Manager Launcher v1.0.1
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -242,15 +242,25 @@ end
 # Main Function
 
 function cspkg_main(borken)
-    cspkg_print("Fetching source from " + utils.get_hostname(config.content.source) + "...")
-    var source = utils.http_get(config.content.source)
-    if source == null || source.empty()
-        cspkg_log("cspkg: timeout when fetching index from \"" + config.content.source + "\"")
-        return
+    var repos = config.content.source.split({';'})
+    var source = null
+    foreach source_url in repos
+        cspkg_print("Fetching source from " + utils.get_hostname(source_url) + "...")
+        var source_json = utils.http_get(source_url)
+        if source_json == null || source_json.empty()
+            cspkg_log("cspkg: timeout when fetching index from \"" + source_url + "\"")
+            return
+        end
+        source = json.to_var(json.from_string(source_json))
+        if !source.exist("dependencies") || !source.dependencies.exist("cspkg")
+            cspkg_log("cspkg: outdated source on " + utils.get_hostname(source_url))
+            continue
+        else
+            break
+        end
     end
-    source = json.to_var(json.from_string(source))
-    if !source.exist("dependencies") || !source.dependencies.exist("cspkg")
-        cspkg_log("cspkg: outdated source on " + utils.get_hostname(config.content.source))
+    if source == null
+        cspkg_log("cspkg: fetching source failed.")
         return
     end
     var remote_info = source.dependencies.cspkg
@@ -331,10 +341,9 @@ block
     end
 end
 
-var cspkg = context.source_import(config.compose_cspkg_package())
 config.init()
-cspkg_main(cspkg == null)
-cspkg = context.source_import(config.compose_cspkg_package())
+cspkg_main(!system.file.exist(config.compose_cspkg_package()))
+var cspkg = context.source_import(config.compose_cspkg_package())
 if cspkg == null
     cspkg_log("cspkg: broken cspkg installation.")
     system.exit(0)
