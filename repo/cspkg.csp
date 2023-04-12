@@ -1,5 +1,5 @@
 #
-# Covariant Script Package Manager v2.4.2
+# Covariant Script Package Manager v2.4.3
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.4.2"
+constant cspkg_version = "2.4.3"
 
 import codec.json as json
 import process
@@ -124,12 +124,8 @@ namespace env
         catch e; end
         if system.is_platform_windows()
             return env.user_home() + system.path.separator + "Documents" + system.path.separator + "CovScript"
-        end
-        if system.is_platform_linux()
-            return "/usr/share/covscript"
-        end
-        if system.is_platform_darwin()
-            return "/Applications/CovScript.app/Contents/MacOS/covscript"
+        else
+            return env.user_home() + system.path.separator + ".covscript"
         end
     end
     function platform()
