@@ -1,5 +1,5 @@
 #
-# Covariant Script Package Manager v2.4.4
+# Covariant Script Package Manager v2.4.5
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.4.4"
+constant cspkg_version = "2.4.5"
 
 import codec.json as json
 import process
@@ -687,13 +687,22 @@ function run_remove(opt, args)
             return
         end
         var support_set = pending_set
-        foreach it in local_pac
-            foreach dep in it.second.Dependencies
-                if pending_set.exist(dep)
-                    support_set.insert(it.first)
+        loop
+            # Checking dependencies
+            var empty = true
+            foreach it in local_pac
+                if support_set.exist(it.first)
+                    continue
+                end
+                foreach dep in it.second.Dependencies
+                    if support_set.exist(dep)
+                        support_set.insert(it.first)
+                        empty = false
+                        continue
+                    end
                 end
             end
-        end
+        until empty
         if !config.cancel_prompt
             var sorted_list = new array
             foreach it in support_set do sorted_list.push_back(it)
