@@ -1,5 +1,5 @@
 #
-# Covariant Script Package Manager v2.4.3
+# Covariant Script Package Manager v2.4.4
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.4.3"
+constant cspkg_version = "2.4.4"
 
 import codec.json as json
 import process
@@ -213,15 +213,16 @@ namespace config
         var packages = utils.open_json(config.compose_packages())
         var local_pac = new hash_map
         var p = system.path.scan(env.covscript_home() + system.path.separator + "imports")
-        var reg = regex.build("^(.*)\\.(cse|csp|ecsx)$")
+        var reg = regex.build("^(.*)\\.(cse|csp|csym|ecsx)$")
         foreach it in p
             if it.type == system.path.type.reg
                 var name = it.name
                 var r = reg.match(name)
                 if !r.empty()
                     name = r.str(1)
-                    if r.str(2) == "ecsx"
-                        name += ".ecsx"
+                    var ext = r.str(2)
+                    if ext == "csym" || ext == "ecsx"
+                        name += "." + ext
                     end
                     if packages.exist(name)
                         local_pac.insert(name, packages[name])
@@ -434,13 +435,17 @@ class cspkg_install
                     fetch_source()
                     local_pac = new hash_map
                     var p = system.path.scan(env.covscript_home() + system.path.separator + "imports")
-                    var reg = regex.build("^(.*)\\.(cse|csp|ecsx)$")
+                    var reg = regex.build("^(.*)\\.(cse|csp|csym|ecsx)$")
                     foreach it in p
                         if it.type == system.path.type.reg
                             var name = it.name
                             var r = reg.match(name)
                             if !r.empty()
                                 name = r.str(1)
+                                var ext = r.str(2)
+                                if ext == "csym" || ext == "ecsx"
+                                    name += "." + ext
+                                end
                                 if package_list.exist(name)
                                     var info = utils.http_get(package_list[name])
                                     if info == null || info.empty()
@@ -545,7 +550,7 @@ class cspkg_install
         foreach it in deps_set
             link info = package_info[it]
             cspkg_print("Installing " + info.Info + "...")
-            var reg = regex.build("^.*?(\\w+\\.(cse|csp|ecsx))$")
+            var reg = regex.build("^.*?(\\w+\\.(cse|csp|csym|ecsx))$")
             var r = reg.match(info.Target)
             if r.empty()
                 cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".")
@@ -633,7 +638,7 @@ class cspkg_upgrade extends cspkg_install
         foreach pac in this.deps_set
             link info = this.package_info[pac]
             cspkg_print("Upgrading " + info.Info + "...")
-            var reg = regex.build("^.*?(\\w+\\.(cse|csp|ecsx))$")
+            var reg = regex.build("^.*?(\\w+\\.(cse|csp|csym|ecsx))$")
             var r = reg.match(info.Target)
             if r.empty()
                 cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".")
@@ -754,7 +759,7 @@ function build_install(base_path, pacs)
                     info.Version += "_ABI" + env.covscript_abi()
                 end
                 cspkg_print("Installing local package " + info.Name + "(" + info.Version + ")...")
-                var file_reg = regex.build("^.*?(\\w+\\.(cse|csp|ecsx))$")
+                var file_reg = regex.build("^.*?(\\w+\\.(cse|csp|csym|ecsx))$")
                 var file_name = file_reg.match(info.Target)
                 if file_name.empty() || !system.file.exist(base_path + info.Target)
                     cspkg_log("cspkg: invalid target in module \'" + base_path + "\'")
@@ -822,7 +827,7 @@ function build_release(base_path, url, flat)
                     info.Version += "_ABI" + env.covscript_abi()
                 end
                 cspkg_print("Building package " + info.Name + "(" + info.Version + ")...")
-                var file_reg = regex.build("^.*?(\\w+\\.(cse|csp|ecsx))$")
+                var file_reg = regex.build("^.*?(\\w+\\.(cse|csp|csym|ecsx))$")
                 var file_name = file_reg.match(info.Target)
                 if file_name.empty() || !system.file.exist(base_path + info.Target)
                     cspkg_log("cspkg: invalid target in module \'" + base_path + "\'")
