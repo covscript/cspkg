@@ -232,12 +232,8 @@ namespace env
         catch e; end
         if system.is_platform_windows()
             return env.user_home() + system.path.separator + "Documents" + system.path.separator + "CovScript"
-        end
-        if system.is_platform_linux()
-            return "/usr/share/covscript"
-        end
-        if system.is_platform_darwin()
-            return "/Applications/CovScript.app/Contents/MacOS/covscript"
+        else
+            return env.user_home() + system.path.separator + ".covscript"
         end
     end
     function platform()
