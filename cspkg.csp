@@ -1231,6 +1231,7 @@ function show_help(opt, args)
     system.out.println(
         "Usage: cspkg <commands> ... [options] ...\n" +
         "\nCommands:\n" +
+        "    init                          Initialize cspkg environment and configuration\n" +
         "    install   | -i  <Package>...  Install packages from remote source\n" +
         "    remove    | -r  <Package>...  Remove packages\n" +
         "    config    | -c  <Key>         Manage local configuration\n" +

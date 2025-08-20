@@ -477,6 +477,17 @@ block
     end
 end
 
+if cmd_args.size > 1 && cmd_args[1] == "init"
+    if !system.file.exist(config.compose_config())
+        config.init()
+        system.out.print("Configuration file created: ")
+    else
+        system.out.print("Configuration file existed: ")
+    end
+    system.out.println(config.compose_config())
+    system.exit(0)
+end
+
 config.init()
 cspkg_main()
 var cspkg = context.source_import(config.compose_cspkg_package())

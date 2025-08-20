@@ -16,6 +16,7 @@ Covariant Script Package Manager is an online package manager written in Covaria
 Usage: cspkg <commands> ... [options] ...
 
 Commands:
+    init                          Initialize cspkg environment and configuration
     install   | -i  <Package>...  Install packages from remote source
     remove    | -r  <Package>...  Remove packages
     config    | -c  <Key>         Manage local configuration
@@ -34,6 +35,9 @@ Options:
     --import                      Scanning local CovScript packages
     --show-avail                  Show available CovScript packages in remote source
 
+  cspkg upgrade
+    --retread                     Retread all local packages and their dependencies
+
   cspkg config
     --set         <Value>         Set a configuration key
     --app         <Value>         Append to a configuration key
@@ -46,6 +50,56 @@ Options:
     --flat                        Don't create cspkg-repo directory structure
 
 ```
+
+## Configure CSPKG
+
+Local path: `~/.cspkg/config.json`
+
+```json
+{
+	"arch": "x86_64",
+	"home": "PATH-TO-COVSCRIPT-HOME",
+	"source": "URL-OF-REPO;URL-OF-REPO",
+	"proxy": "URL-OF-HTTP-PROXY",
+	"timeout_ms": "3000"
+}
+```
+
+For fresh installment, you can run `cspkg init` to generate config file manually.
+
+## Architecture of a typical CSPKG repository
+
+### File Storage
+
+Typically a CSPKG repository is a HTTP(s) site in following structure:
+
+- mirrors.covariant.cn/cspkg/
+  - index.json
+  - index
+    - universal
+    - winucrt
+      - x86_64
+        - index.json
+        - xxx.json
+    - linux
+      - x86_64
+        - index.json
+        - xxx.json
+    - macos
+      - arm64
+        - index.json
+        - xxx.json
+  - universal
+    - xxx.csp
+  - winucrt/x86_64
+    - xxx.cse
+  - linux/x86_64
+    - xxx.cse
+  - macos/arm64
+    - xxx.cse
+
+You can also use local storage by setting source to URL like `file:///path-to-your-local-repo/`.
+
 
 ## Build your package
 
