@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
 #
-# Covariant Script Package Manager Launcher v1.0.1
+# Covariant Script Package Manager Launcher v1.1.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -14,9 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Copyright (C) 2017-2023 Michael Lee(李登淳)
+# Copyright (C) 2017-2025 Michael Lee(李登淳)
 #
-# Email:   lee@unicov.cn, mikecovlee@163.com
+# Email:   mikecovlee@163.com
 # Github:  https://github.com/mikecovlee
 # Website: http://covscript.org.cn
 #
@@ -24,8 +24,6 @@
 #
 # ~/.cspkg
 #   cspkg.log
-#   cspkg.csp
-#   cspkg.json
 #   config.json
 #   packages.json
 #
@@ -39,28 +37,85 @@ import curl
 
 namespace utils
     function open_json(path)
-        var ifs = iostream.ifstream(path)
-        return json.to_var(json.from_stream(ifs))
+        try
+            var ifs = iostream.ifstream(path)
+            return json.to_var(json.from_stream(ifs))
+        catch e
+            return new hash_map
+        end
     end
     function save_json(val, path)
         var ofs = iostream.ofstream(path)
         ofs.print(json.to_string(json.from_var(val)))
     end
-    var url_reg = regex.build("^[a-zA-z]+://([\\w.]+)[^\\s]*$")
-    function check_url(url)
-        return !utils.url_reg.match(url).empty()
+    function parse_json(source_json, default_val)
+        try
+            return json.to_var(json.from_string(source_json))
+        catch e
+            return clone(default_val)
+        end
     end
-    function get_hostname(url)
-        var m = utils.url_reg.match(url)
-        if !m.empty()
-            return m.str(1)
+    function process_url(url)
+        if url[-1] != '/'
+            return url + '/'
         else
-            return new string
+            return url
+        end
+    end
+    var win_absolute_path_reg = regex.build("^\\\\*([a-zA-z]:\\\\[^\\s]*)$")
+    function process_path(path)
+        if path == null or path.size == 0
+            return path
+        end
+        var real_path = '/', fake_path = '\\'
+        if system.path.separator == '\\'
+            swap(real_path, fake_path)
+        end
+        var new_path = new string
+        var last_path = false
+        foreach ch in path
+            if ch == fake_path
+                ch = real_path
+            end
+            if ch == real_path
+                if last_path
+                    continue
+                else
+                    last_path = true
+                end
+            else
+                last_path = false
+            end
+            new_path += ch
+        end
+        if system.path.separator == '\\'
+            var m = utils.win_absolute_path_reg.match(new_path)
+            if !m.empty()
+                new_path = m.str(1)
+            end
+        end
+        if path[0] == real_path
+            new_path = to_string(real_path) + new_path
+        end
+        return new_path
+    end
+    var url_reg = regex.build("^([a-zA-z]+)://(/*[\\w.:]+)([^\\s]*)$")
+    function parse_url(url)
+        var m = utils.url_reg.match(url)
+        if !m.empty() && m.size() == 4
+            if m.str(1) == "file"
+                return {"protocol": m.str(1), "hostname": "localhost", "path": utils.process_path(m.str(2) + m.str(3))}.to_hash_map()
+            else
+                return {"protocol": m.str(1), "hostname": m.str(2), "path": m.str(3)}.to_hash_map()
+            end
+        else
+            return null
         end
     end
     constant low_speed_limit = 100
     function http_get(url)
-        if !utils.check_url(url)
+        var url_info = utils.parse_url(url)
+        if url_info == null || url_info.protocol != "http" || url_info.protocol != "https"
             cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
             return null
         end
@@ -84,7 +139,8 @@ namespace utils
         end
     end
     function http_get_file(url, path)
-        if !utils.check_url(url)
+        var url_info = utils.parse_url(url)
+        if url_info == null || url_info.protocol != "http" || url_info.protocol != "https"
             cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
             return -2
         end
@@ -105,6 +161,59 @@ namespace utils
         session.set_low_speed_limit(low_speed_limit)
         session.set_low_speed_time(config.content.timeout_ms.to_number())
         return session.perform() ? 1 : 0
+    end
+    function get_content(url)
+        var url_info = utils.parse_url(url)
+        if url_info == null
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
+            return null
+        end
+        switch url_info.protocol
+            case "http"
+                return utils.http_get(url)
+            end
+            case "https"
+                return utils.http_get(url)
+            end
+            case "file"
+                var in = iostream.fstream(url_info.path, iostream.openmode.in)
+                if !in.good()
+                    return null
+                end
+                var buff = new string
+                loop
+                    var ch = in.get()
+                    if in.eof()
+                        break
+                    else
+                        buff += ch
+                    end
+                end
+                return buff
+            end
+        end
+        cspkg_log("cspkg: unsupported protocol for URL \'" + url + "\".")
+        return null
+    end
+    function get_file(url, path)
+        var url_info = utils.parse_url(url)
+        if url_info == null
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
+            return -2
+        end
+        switch url_info.protocol
+            case "http"
+                return utils.http_get_file(url, path)
+            end
+            case "https"
+                return utils.http_get_file(url, path)
+            end
+            case "file"
+                return system.file.copy(url_info.path, path) ? 1 : 0
+            end
+        end
+        cspkg_log("cspkg: unsupported protocol for URL \'" + url + "\".")
+        return -2
     end
 end
 
@@ -175,7 +284,7 @@ namespace config
         "home" : env.covscript_home(),
         "timeout_ms" : "3000",
     #   "proxy" : ""
-        "source" : "http://mirrors.covariant.cn/cspkg/index.json"
+        "source" : "http://mirrors.covariant.cn/cspkg/"
     }.to_hash_map()
     @end
     var content = null
@@ -189,11 +298,11 @@ namespace config
     function compose_config()
         return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "config.json"
     end
-    function compose_cspkg_info()
-        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.json"
+    function compose_packages()
+        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "packages.json"
     end
     function compose_cspkg_package()
-        return env.user_home() + system.path.separator + ".cspkg" + system.path.separator + "cspkg.csp"
+        return env.covscript_home() + system.path.separator + "imports" + system.path.separator + "cspkg.csp"
     end
     function save()
         utils.save_json(config.content, config.compose_config())
@@ -241,32 +350,55 @@ end
 
 # Main Function
 
-function cspkg_main(borken)
+function cspkg_main()
     var repos = config.content.source.split({';'})
-    var source = null
+    var target_repo = null
     foreach source_url in repos
-        cspkg_print("Fetching source from " + utils.get_hostname(source_url) + "...")
-        var source_json = utils.http_get(source_url)
-        if source_json == null || source_json.empty()
-            cspkg_log("cspkg: timeout when fetching index from \"" + source_url + "\"")
-            return
-        end
-        source = json.to_var(json.from_string(source_json))
-        if !source.exist("dependencies") || !source.dependencies.exist("cspkg")
-            cspkg_log("cspkg: outdated source on " + utils.get_hostname(source_url))
+        var url_info = utils.parse_url(source_url)
+        if url_info == null
+            cspkg_log("cspkg: broken source url: \"" + source_url + "\"")
             continue
-        else
-            break
         end
+        cspkg_print("Fetching source from " + url_info.hostname + "...")
+        var source_json = utils.get_content(utils.process_url(source_url) + "index.json")
+        if source_json == null || source_json.empty()
+            cspkg_log("cspkg: failed to fetch index from \"" + source_url + "\"")
+            continue
+        end
+        if utils.parse_json(source_json, new array).to_hash_set().exist("universal")
+            target_repo = source_url
+            break
+        else
+            cspkg_log("cspkg: broken source on \"" + url_info.hostname)
+            continue
+        end        
     end
-    if source == null
+    if target_repo == null
         cspkg_log("cspkg: fetching source failed.")
         return
     end
-    var remote_info = source.dependencies.cspkg
-    if !system.file.exist(config.compose_cspkg_info())
+    var source_json = utils.get_content(utils.process_url(target_repo) + "index/universal/index.json")
+    if source_json == null || source_json.empty() || !utils.parse_json(source_json, new array).to_hash_set().exist("cspkg")
+        system.out.println(utils.process_url(target_repo) + "universal/index.json")
+        cspkg_log("cspkg: failed to find cspkg from \"" + target_repo + "\"")
+        return
+    end
+    var remote_info = utils.get_content(utils.process_url(target_repo) + "index/universal/cspkg.json")
+    if remote_info == null || remote_info.empty()
+        cspkg_log("cspkg: broken source on \"" + target_repo + "\"")
+        return
+    end
+    remote_info = utils.parse_json(remote_info, new hash_map)
+    var packages = null
+    if system.file.exist(config.compose_packages())
+        packages = utils.open_json(config.compose_packages())
+    else
+        packages = new hash_map
+    end
+    var do_upgrade = false
+    if !packages.exist("cspkg")
         if !config.cancel_prompt
-            if borken
+            if !system.file.exist(config.compose_cspkg_package())
                 system.out.println("Installing cspkg...")
             else
                 system.out.println("Fix broken cspkg installation...")
@@ -277,9 +409,11 @@ function cspkg_main(borken)
                 system.exit(0)
             end
         end
+        packages["cspkg"] = remote_info
+        packages["cspkg"]["FileName"] = "cspkg.csp"
     else
-        var local_info = utils.open_json(config.compose_cspkg_info())
-        if remote_info.Version > local_info.Version
+        if remote_info.Version > packages["cspkg"].Version
+            do_upgrade = true
             if !config.cancel_prompt
                 system.out.println("Detect newer version for cspkg: " + remote_info.Version)
                 system.out.println("Do you want to continue?[y/n]")
@@ -288,19 +422,21 @@ function cspkg_main(borken)
                     return
                 end
             end
+            packages["cspkg"] = remote_info
+            packages["cspkg"]["FileName"] = "cspkg.csp"
         else
-            if borken
+            if !system.file.exist(config.compose_cspkg_package())
                 cspkg_print("Fix broken cspkg installation...")
             else
                 return
             end
         end
     end
-    var error_value = utils.http_get_file(remote_info.Target, config.compose_cspkg_package())
+    var error_value = utils.get_file(remote_info.Target, config.compose_cspkg_package())
     switch error_value
         case 1
-            utils.save_json(remote_info, config.compose_cspkg_info())
-            if borken
+            utils.save_json(packages, config.compose_packages())
+            if !do_upgrade
                 cspkg_log("cspkg: installation successfully.")
             else
                 cspkg_log("cspkg: local installation has been upgraded to " + remote_info.Version)
@@ -342,7 +478,7 @@ block
 end
 
 config.init()
-cspkg_main(!system.file.exist(config.compose_cspkg_package()))
+cspkg_main()
 var cspkg = context.source_import(config.compose_cspkg_package())
 if cspkg == null
     cspkg_log("cspkg: broken cspkg installation.")

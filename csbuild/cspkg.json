@@ -1,0 +1,14 @@
+{
+    "Type": "Package",
+    "Name": "cspkg",
+    "Info": "CovScript Package Manager",
+    "Author": "CovScript Organization",
+    "Version": "2.5.0",
+    "Target": "cspkg.csp",
+    "Dependencies": [
+        "codec",
+        "process",
+        "regex",
+        "curl"
+    ]
+}

@@ -1,5 +1,5 @@
 #
-# Covariant Script Package Manager v2.4.5
+# Covariant Script Package Manager v2.5.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Copyright (C) 2017-2023 Michael Lee(李登淳)
+# Copyright (C) 2017-2025 Michael Lee(李登淳)
 #
-# Email:   lee@unicov.cn, mikecovlee@163.com
+# Email:   mikecovlee@163.com
 # Github:  https://github.com/mikecovlee
 # Website: http://covscript.org.cn
 #
@@ -23,15 +23,13 @@
 #
 # ~/.cspkg
 #   cspkg.log
-#   cspkg.csp
-#   cspkg.json
 #   config.json
 #   packages.json
 #
 
 package cspkg
 
-constant cspkg_version = "2.4.5"
+constant cspkg_version = "2.5.0"
 
 import codec.json as json
 import process
@@ -40,28 +38,89 @@ import curl
 
 namespace utils
     function open_json(path)
-        var ifs = iostream.ifstream(path)
-        return json.to_var(json.from_stream(ifs))
+        try
+            var ifs = iostream.ifstream(path)
+            return json.to_var(json.from_stream(ifs))
+        catch e
+            return new hash_map
+        end
     end
     function save_json(val, path)
         var ofs = iostream.ofstream(path)
         ofs.print(json.to_string(json.from_var(val)))
     end
-    var url_reg = regex.build("^[a-zA-z]+://([\\w.]+)[^\\s]*$")
-    function check_url(url)
-        return !utils.url_reg.match(url).empty()
+    function parse_json(source_json, default_val)
+        try
+            return json.to_var(json.from_string(source_json))
+        catch e
+            return clone(default_val)
+        end
+    end
+    function process_url(url)
+        if url[-1] != '/'
+            return url + '/'
+        else
+            return url
+        end
+    end
+    var win_absolute_path_reg = regex.build("^\\\\*([a-zA-z]:\\\\[^\\s]*)$")
+    function process_path(path)
+        if path == null or path.size == 0
+            return path
+        end
+        var real_path = '/', fake_path = '\\'
+        if system.path.separator == '\\'
+            swap(real_path, fake_path)
+        end
+        var new_path = new string
+        var last_path = false
+        foreach ch in path
+            if ch == fake_path
+                ch = real_path
+            end
+            if ch == real_path
+                if last_path
+                    continue
+                else
+                    last_path = true
+                end
+            else
+                last_path = false
+            end
+            new_path += ch
+        end
+        if system.path.separator == '\\'
+            var m = utils.win_absolute_path_reg.match(new_path)
+            if !m.empty()
+                new_path = m.str(1)
+            end
+        end
+        if path[0] == real_path
+            new_path = to_string(real_path) + new_path
+        end
+        return new_path
+    end
+    var url_reg = regex.build("^([a-zA-z]+)://(/*[\\w.:]+)([^\\s]*)$")
+    function parse_url(url)
+        var m = utils.url_reg.match(url)
+        if !m.empty() && m.size() == 4
+            if m.str(1) == "file"
+                return {"protocol": m.str(1), "hostname": "localhost", "path": utils.process_path(m.str(2) + m.str(3))}.to_hash_map()
+            else
+                return {"protocol": m.str(1), "hostname": m.str(2), "path": m.str(3)}.to_hash_map()
+            end
+        else
+            return null
+        end
     end
     function get_hostname(url)
-        var m = utils.url_reg.match(url)
-        if !m.empty()
-            return m.str(1)
-        else
-            return new string
-        end
+        var url_info = utils.parse_url(url)
+        return url_info == null ? "" : url_info.hostname
     end
     constant low_speed_limit = 100
     function http_get(url)
-        if !utils.check_url(url)
+        var url_info = utils.parse_url(url)
+        if url_info == null || url_info.protocol != "http" || url_info.protocol != "https"
             cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
             return null
         end
@@ -85,7 +144,8 @@ namespace utils
         end
     end
     function http_get_file(url, path)
-        if !utils.check_url(url)
+        var url_info = utils.parse_url(url)
+        if url_info == null || url_info.protocol != "http" || url_info.protocol != "https"
             cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
             return -2
         end
@@ -106,6 +166,59 @@ namespace utils
         session.set_low_speed_limit(low_speed_limit)
         session.set_low_speed_time(config.content.timeout_ms.to_number())
         return session.perform() ? 1 : 0
+    end
+    function get_content(url)
+        var url_info = utils.parse_url(url)
+        if url_info == null
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
+            return null
+        end
+        switch url_info.protocol
+            case "http"
+                return utils.http_get(url)
+            end
+            case "https"
+                return utils.http_get(url)
+            end
+            case "file"
+                var in = iostream.fstream(url_info.path, iostream.openmode.in)
+                if !in.good()
+                    return null
+                end
+                var buff = new string
+                loop
+                    var ch = in.get()
+                    if in.eof()
+                        break
+                    else
+                        buff += ch
+                    end
+                end
+                return buff
+            end
+        end
+        cspkg_log("cspkg: unsupported protocol for URL \'" + url + "\".")
+        return null
+    end
+    function get_file(url, path)
+        var url_info = utils.parse_url(url)
+        if url_info == null
+            cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
+            return -2
+        end
+        switch url_info.protocol
+            case "http"
+                return utils.http_get_file(url, path)
+            end
+            case "https"
+                return utils.http_get_file(url, path)
+            end
+            case "file"
+                return system.file.copy(url_info.path, path) ? 1 : 0
+            end
+        end
+        cspkg_log("cspkg: unsupported protocol for URL \'" + url + "\".")
+        return -2
     end
 end
 
@@ -280,60 +393,58 @@ class cspkg_install
     var deps_set = null
     function fetch_source_url(src_url)
         cspkg_print("Fetching index from " + utils.get_hostname(src_url) + "...")
-        var source = utils.http_get(src_url)
+        var source = utils.get_content(utils.process_url(src_url) + "index.json")
         if source == null || source.empty()
             cspkg_log("cspkg: timeout when fetching index from \"" + src_url + "\"")
             return
         end
-        source = json.to_var(json.from_string(source))
+        source = utils.parse_json(source, new array).to_hash_set()
         if source.exist("universal")
-            var url = source.base_url + source.universal
-            var uni_source = utils.http_get(url)
+            var url = utils.process_url(src_url) + "index/universal/index.json"
+            var uni_source = utils.get_content(url)
             if uni_source != null && !uni_source.empty()
-                uni_source = json.to_var(json.from_string(uni_source))
+                uni_source = utils.parse_json(uni_source, new array).to_hash_set()
                 foreach it in uni_source
-                    if package_list.exist(it.first)
-                        cspkg_log("cspkg: package index \'" + it.first + "\' existed, skipping...")
+                    if package_list.exist(it)
+                        cspkg_log("cspkg: package index \'" + it + "\' existed, skipping...")
                     else
-                        package_list.insert(it.first, it.second)
+                        package_list.insert(it, utils.process_url(src_url) + "index/universal/" + it + ".json")
                     end
                 end
             else
                 cspkg_log("cspkg: timeout when fetching universal source from \"" + src_url + "\"")
             end
         end
-        if source.exist(env.platform())
-            if source[env.platform()].exist("universal")
-                var url = source.base_url + source[env.platform()].universal
-                var os_uni_source = utils.http_get(url)
-                if os_uni_source != null && !os_uni_source.empty()
-                    os_uni_source = json.to_var(json.from_string(os_uni_source))
-                    foreach it in os_uni_source
-                        if package_list.exist(it.first)
-                            cspkg_log("cspkg: package index \'" + it.first + "\' existed, skipping...")
-                        else
-                            package_list.insert(it.first, it.second)
-                        end
+        if source.exist(env.platform() + "/universal")
+            var url = utils.process_url(src_url) + "index/" + env.platform() + "/universal/index.json"
+            var os_uni_source = utils.get_content(url)
+            if os_uni_source != null && !os_uni_source.empty()
+                os_uni_source = utils.parse_json(os_uni_source, new array).to_hash_set()
+                foreach it in os_uni_source
+                    if package_list.exist(it)
+                        cspkg_log("cspkg: package index \'" + it + "\' existed, skipping...")
+                    else
+                        package_list.insert(it, utils.process_url(src_url) + "index/" + env.platform() + "/universal/" + it + ".json")
                     end
-                else
-                    cspkg_log("cspkg: timeout when fetching " + env.platform() + "/universal source from \"" + src_url + "\"")
                 end
+            else
+                cspkg_log("cspkg: timeout when fetching " + env.platform() + "/universal source from \"" + src_url + "\"")
             end
-            if source[env.platform()].exist(config.content.arch)
-                var url = source.base_url + source[env.platform()][config.content.arch]
-                var os_source = utils.http_get(url)
-                if os_source != null && !os_source.empty()
-                    os_source = json.to_var(json.from_string(os_source))
-                    foreach it in os_source
-                        if package_list.exist(it.first)
-                            cspkg_log("cspkg: package index \'" + it.first + "\' existed, skipping...")
-                        else
-                            package_list.insert(it.first, it.second)
-                        end
+        end
+        if source.exist(env.platform() + "/" + config.content.arch)
+            var url = utils.process_url(src_url) + "index/" + env.platform() + "/" + config.content.arch + "/index.json"
+            var os_source = utils.get_content(url)
+            if os_source != null && !os_source.empty()
+                os_source = utils.parse_json(os_source, new array).to_hash_set()
+                foreach it in os_source
+                    if package_list.exist(it)
+                        cspkg_log("cspkg: package index \'" + it + "\' existed, skipping...")
+                    else
+                        package_list.insert(it, utils.process_url(src_url) + "index/" + env.platform() + "/" + config.content.arch + "/" + it + ".json")
                     end
-                else
-                    cspkg_log("cspkg: timeout when fetching " + env.platform() + "/" + config.content.arch + " source from \"" + src_url + "\"")
                 end
+            else
+                cspkg_log("cspkg: timeout when fetching " + env.platform() + "/" + config.content.arch + " source from \"" + src_url + "\"")
             end
         end
     end
@@ -351,12 +462,12 @@ class cspkg_install
             cspkg_log("cspkg: can not find corresponding package information: \'" + pac + "\'.")
             return
         end
-        var info = utils.http_get(package_list.at(pac))
+        var info = utils.get_content(package_list.at(pac))
         if info == null || info.empty()
             cspkg_log("cspkg: timeout when fetching package information: \'" + pac + "\'.")
             return
         end
-        info = json.to_var(json.from_string(info))
+        info = utils.parse_json(info, new hash_map)
         foreach deps in info.Dependencies do find_deps(deps)
         package_info.insert(pac, info)
         deps_set.insert(pac)
@@ -447,11 +558,11 @@ class cspkg_install
                                     name += "." + ext
                                 end
                                 if package_list.exist(name)
-                                    var info = utils.http_get(package_list[name])
+                                    var info = utils.get_content(package_list[name])
                                     if info == null || info.empty()
                                         cspkg_log("cspkg: timeout when fetching package information: \'" + it.name + "\'.")
                                     else
-                                        info = json.to_var(json.from_string(info))
+                                        info = utils.parse_json(info, new hash_map)
                                         info["FileName"] = it.name
                                         local_pac.insert(name, info)
                                         cspkg_log("cspkg: found " + info.Info + "(" + info.Version + ")")
@@ -556,7 +667,7 @@ class cspkg_install
                 cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".")
                 continue
             end
-            var error_value = utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
+            var error_value = utils.get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
             switch error_value
                 case 1
                     local_pac.insert(it, info)
@@ -644,7 +755,7 @@ class cspkg_upgrade extends cspkg_install
                 cspkg_log("cspkg: error when parsing URL \'" + info.Target + "\".")
                 continue
             end
-            var error_value = config.minimal_deps.exist(pac) ? 1 : utils.http_get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
+            var error_value = config.minimal_deps.exist(pac) ? 1 : utils.get_file(info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + r.str(1))
             switch error_value
                 case 1
                     this.local_pac[pac] = info
@@ -1043,6 +1154,29 @@ end
 function list_packages(opt, args)
     if system.file.exist(config.compose_packages())
         var packages = config.check_local_packages()
+        var deps_set = new hash_set
+        foreach pac in packages
+            foreach dep in pac.second.Dependencies
+                deps_set.insert(dep)
+            end
+        end
+        foreach pac in packages
+            if deps_set.exist(pac.first)
+                deps_set.erase(pac.first)
+            end
+        end
+        var printed = false
+        if !deps_set.empty()
+            system.out.println("\nBroken Dependencies")
+            draw_separator()
+            system.out.println("Name")
+            draw_separator()
+            foreach it in deps_set
+                system.out.println(it)
+            end
+            system.out.println("")
+            printed = true
+        end
         block
             var oldt = packages
             packages = new array
@@ -1050,6 +1184,9 @@ function list_packages(opt, args)
                 packages.push_back(it)
             end
             packages.sort([](a, b)->a.first < b.first)
+        end
+        if !printed
+            system.out.println("")
         end
         system.out.println("Installed Packages")
         draw_separator()
@@ -1083,6 +1220,7 @@ function list_packages(opt, args)
             system.out.print("    ")
             system.out.println(it.second.Info)
         end
+        system.out.println("")
     else
         cspkg_log("cspkg: can not find package information. try \'cspkg install --import\'")
     end
