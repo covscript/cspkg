@@ -280,7 +280,7 @@ namespace config
         "home" : env.covscript_home(),
         "timeout_ms" : "3000",
     #   "proxy" : ""
-        "source" : "http://mirrors.covariant.cn/cspkg/"
+        "source" : "http://mirrors.covariant.cn/cspkg_v2/"
     }.to_hash_map()
     @end
     var content = null

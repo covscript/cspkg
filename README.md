@@ -73,7 +73,7 @@ For fresh installment, you can run `cspkg init` to generate config file manually
 
 Typically a CSPKG repository is a HTTP(s) site in following structure:
 
-- mirrors.covariant.cn/cspkg/
+- http://mirrors.covariant.cn/cspkg_v2/
   - index.json
   - index
     - universal
@@ -130,7 +130,7 @@ You can also use local storage by setting source to URL like `file:///path-to-yo
     "Info": "CSDBC MySQL Driver",
     "Author": "CovScript Organization",
     "Version": "1.0.0",
-    "Target": "http://mirrors.covariant.cn/covscript/cspkg/universal/csdbc_mysql.csp",
+    "Target": "http://mirrors.covariant.cn/cspkg_v2/universal/csdbc_mysql.csp",
     "Dependencies": [
         "database",
         "codec",
