@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.5.0"
+constant cspkg_version = "2.5.1"
 
 import codec.json as json
 import process
@@ -120,7 +120,7 @@ namespace utils
     constant low_speed_limit = 100
     function http_get(url)
         var url_info = utils.parse_url(url)
-        if url_info == null || url_info.protocol != "http" || url_info.protocol != "https"
+        if url_info == null || (url_info.protocol != "http" && url_info.protocol != "https")
             cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
             return null
         end
@@ -145,7 +145,7 @@ namespace utils
     end
     function http_get_file(url, path)
         var url_info = utils.parse_url(url)
-        if url_info == null || url_info.protocol != "http" || url_info.protocol != "https"
+        if url_info == null || (url_info.protocol != "http" && url_info.protocol != "https")
             cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
             return -2
         end

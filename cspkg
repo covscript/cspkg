@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
 #
-# Covariant Script Package Manager Launcher v1.1.0
+# Covariant Script Package Manager Launcher v1.1.1
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -115,7 +115,7 @@ namespace utils
     constant low_speed_limit = 100
     function http_get(url)
         var url_info = utils.parse_url(url)
-        if url_info == null || url_info.protocol != "http" || url_info.protocol != "https"
+        if url_info == null || (url_info.protocol != "http" && url_info.protocol != "https")
             cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
             return null
         end
@@ -140,7 +140,7 @@ namespace utils
     end
     function http_get_file(url, path)
         var url_info = utils.parse_url(url)
-        if url_info == null || url_info.protocol != "http" || url_info.protocol != "https"
+        if url_info == null || (url_info.protocol != "http" && url_info.protocol != "https")
             cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
             return -2
         end
