@@ -28,7 +28,7 @@
 #   packages.json
 #
 
-@require: 210505
+@require: 250901
 
 import codec.json as json
 import process
@@ -251,32 +251,12 @@ namespace env
             return "macos"
         end
     end
-    @begin
-    var arch_map = {
-        "AMD64" : "x86_64",
-        "ARM64" : "arm64",
-        "x86"   : "i386"
-    }.to_hash_map()
-    @end
-    function arch()
-        if system.is_platform_unix()
-            var p = process.exec("arch", {})
-            return p.out().getline()
-        else
-            var arch_name = system.getenv("PROCESSOR_ARCHITECTURE")
-            if env.arch_map.exist(arch_name)
-                return env.arch_map[arch_name]
-            else
-                throw runtime.exception("Unrecognizable platform name: " + arch_name)
-            end
-        end
-    end
 end
 
 namespace config
     @begin
     var default_content = {
-        "arch" : env.arch(),
+        "arch" : system.arch_name,
         "home" : env.covscript_home(),
         "timeout_ms" : "3000",
     #   "proxy" : ""
