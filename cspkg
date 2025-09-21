@@ -224,7 +224,7 @@ namespace env
             return env.cs_std
         end
         var abi_reg = regex.build("STD Version: ([A-Z0-9]{6})")
-        var p = process.exec("./build/bin/cs", {"-v"})
+        var p = process.exec("cs", {"-v"})
         var r = null, line = null
         loop; until !(r = abi_reg.search(line = p.out().getline())).empty()
         env.cs_std = r.str(1)

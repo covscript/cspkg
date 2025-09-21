@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.5.2"
+constant cspkg_version = "2.5.3"
 
 import codec.json as json
 import process
@@ -229,7 +229,7 @@ namespace env
             return env.cs_std
         end
         var abi_reg = regex.build("STD Version: ([A-Z0-9]{6})")
-        var p = process.exec("./build/bin/cs", {"-v"})
+        var p = process.exec("cs", {"-v"})
         var r = null, line = null
         loop; until !(r = abi_reg.search(line = p.out().getline())).empty()
         env.cs_std = r.str(1)
@@ -295,7 +295,7 @@ namespace env
             return env.cs_abi
         end
         var abi_reg = regex.build("ABI Version: ([A-Z0-9]{6})")
-        var p = process.exec("./build/bin/cs", {"-v"})
+        var p = process.exec("cs", {"-v"})
         var r = null, line = null
         loop; until !(r = abi_reg.search(line = p.out().getline())).empty()
         env.cs_abi = r.str(1)
