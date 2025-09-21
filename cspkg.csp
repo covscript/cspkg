@@ -27,8 +27,6 @@
 #   packages.json
 #
 
-@require: 250901
-
 package cspkg
 
 constant cspkg_version = "2.5.2"
@@ -225,6 +223,18 @@ namespace utils
 end
 
 namespace env
+    var cs_std = null
+    function covscript_std()
+        if env.cs_std != null
+            return env.cs_std
+        end
+        var abi_reg = regex.build("STD Version: ([A-Z0-9]{6})")
+        var p = process.exec("./build/bin/cs", {"-v"})
+        var r = null, line = null
+        loop; until !(r = abi_reg.search(line = p.out().getline())).empty()
+        env.cs_std = r.str(1)
+        return env.cs_std
+    end
     function user_home()
         if system.is_platform_windows()
             return system.getenv("USERPROFILE")
@@ -242,12 +252,58 @@ namespace env
             return env.user_home() + system.path.separator + ".covscript"
         end
     end
+    function platform()
+        if env.covscript_std() >= "250901"
+            return env.platform()
+        end
+        if system.is_platform_windows()
+            if env.win_ucrt
+                return "winucrt"
+            else
+                return "windows"
+            end
+        end
+        if system.is_platform_linux()
+            return "linux"
+        end
+        if system.is_platform_darwin()
+            return "macos"
+        end
+    end
+    @begin
+    var arch_map = {
+        "AMD64" : "x86_64",
+        "ARM64" : "arm64",
+        "x86"   : "i386"
+    }.to_hash_map()
+    @end
+    function arch()
+        if env.covscript_std() >= "250901"
+            return env.arch()
+        end
+        if system.is_platform_unix()
+            var p = process.exec("arch", {})
+            return p.out().getline()
+        else
+            var arch_name = system.getenv("PROCESSOR_ARCHITECTURE")
+            if env.arch_map.exist(arch_name)
+                return env.arch_map[arch_name]
+            else
+                throw runtime.exception("Unrecognizable platform name: " + arch_name)
+            end
+        end
+    end
+    var cs_abi = null
     function covscript_abi()
+        if env.cs_abi != null
+            return env.cs_abi
+        end
         var abi_reg = regex.build("ABI Version: ([A-Z0-9]{6})")
-        var p = process.exec("cs", {"-v"})
+        var p = process.exec("./build/bin/cs", {"-v"})
         var r = null, line = null
         loop; until !(r = abi_reg.search(line = p.out().getline())).empty()
-        return r.str(1)
+        env.cs_abi = r.str(1)
+        return env.cs_abi
     end
 end
 
@@ -377,8 +433,8 @@ class cspkg_install
                 cspkg_log("cspkg: timeout when fetching universal source from \"" + src_url + "\"")
             end
         end
-        if source.exist(system.os_name + "/universal")
-            var url = utils.process_url(src_url) + "index/" + system.os_name + "/universal/index.json"
+        if source.exist(env.platform() + "/universal")
+            var url = utils.process_url(src_url) + "index/" + env.platform() + "/universal/index.json"
             var os_uni_source = utils.get_content(url)
             if os_uni_source != null && !os_uni_source.empty()
                 os_uni_source = utils.parse_json(os_uni_source, new array).to_hash_set()
@@ -386,15 +442,15 @@ class cspkg_install
                     if package_list.exist(it)
                         cspkg_log("cspkg: package index \'" + it + "\' existed, skipping...")
                     else
-                        package_list.insert(it, utils.process_url(src_url) + "index/" + system.os_name + "/universal/" + it + ".json")
+                        package_list.insert(it, utils.process_url(src_url) + "index/" + env.platform() + "/universal/" + it + ".json")
                     end
                 end
             else
-                cspkg_log("cspkg: timeout when fetching " + system.os_name + "/universal source from \"" + src_url + "\"")
+                cspkg_log("cspkg: timeout when fetching " + env.platform() + "/universal source from \"" + src_url + "\"")
             end
         end
-        if source.exist(system.os_name + "/" + config.content.arch)
-            var url = utils.process_url(src_url) + "index/" + system.os_name + "/" + config.content.arch + "/index.json"
+        if source.exist(env.platform() + "/" + config.content.arch)
+            var url = utils.process_url(src_url) + "index/" + env.platform() + "/" + config.content.arch + "/index.json"
             var os_source = utils.get_content(url)
             if os_source != null && !os_source.empty()
                 os_source = utils.parse_json(os_source, new array).to_hash_set()
@@ -402,11 +458,11 @@ class cspkg_install
                     if package_list.exist(it)
                         cspkg_log("cspkg: package index \'" + it + "\' existed, skipping...")
                     else
-                        package_list.insert(it, utils.process_url(src_url) + "index/" + system.os_name + "/" + config.content.arch + "/" + it + ".json")
+                        package_list.insert(it, utils.process_url(src_url) + "index/" + env.platform() + "/" + config.content.arch + "/" + it + ".json")
                     end
                 end
             else
-                cspkg_log("cspkg: timeout when fetching " + system.os_name + "/" + config.content.arch + " source from \"" + src_url + "\"")
+                cspkg_log("cspkg: timeout when fetching " + env.platform() + "/" + config.content.arch + " source from \"" + src_url + "\"")
             end
         end
     end
@@ -896,8 +952,8 @@ function build_release(base_path, url, flat)
     if !flat
         idx_path = base_path + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + "universal"
         pkg_path = base_path + "cspkg-repo" + system.path.separator + "universal"
-        idx_os_path = base_path + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + system.os_name + system.path.separator + system.arch_name
-        pkg_os_path = base_path + "cspkg-repo" + system.path.separator + system.os_name + system.path.separator + system.arch_name
+        idx_os_path = base_path + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + env.platform() + system.path.separator + env.arch()
+        pkg_os_path = base_path + "cspkg-repo" + system.path.separator + env.platform() + system.path.separator + env.arch()
     end
     var json_reg = regex.build("^(.*)\\.json$")
     var files = system.path.scan(path)
@@ -922,7 +978,7 @@ function build_release(base_path, url, flat)
                     if flat
                         info.Target = url + file_name.str(1)
                     else
-                        info.Target = url + system.os_name + "/" + system.arch_name + "/" + file_name.str(1)
+                        info.Target = url + env.platform() + "/" + env.arch() + "/" + file_name.str(1)
                     end
                     info.erase("Type")
                     utils.save_json(info, idx_os_path + system.path.separator + info.Name + ".json")
@@ -1229,8 +1285,8 @@ function show_version(opt, args)
     system.out.println(
         "Covariant Script Package Manager " + cspkg_version + "\n" +
         "\nEnvironment Variables:\n" +
-        "            OS: " + system.os_name + "\n" +
-        "          ARCH: " + system.arch_name + "\n" +
+        "            OS: " + env.platform() + "\n" +
+        "          ARCH: " + env.arch() + "\n" +
         "     USER_HOME: " + env.user_home() + "\n" +
         "COVSCRIPT_HOME: " + env.covscript_home() + "\n"
     )
