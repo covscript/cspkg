@@ -261,6 +261,29 @@ namespace env
             return "macos"
         end
     end
+    @begin
+    var arch_map = {
+        "AMD64" : "x86_64",
+        "ARM64" : "arm64",
+        "x86"   : "i386"
+    }.to_hash_map()
+    @end
+    function arch()
+        if env.covscript_std() >= "250901"
+            return env.arch()
+        end
+        if system.is_platform_unix()
+            var p = process.exec("arch", {})
+            return p.out().getline()
+        else
+            var arch_name = system.getenv("PROCESSOR_ARCHITECTURE")
+            if env.arch_map.exist(arch_name)
+                return env.arch_map[arch_name]
+            else
+                throw runtime.exception("Unrecognizable platform name: " + arch_name)
+            end
+        end
+    end
 end
 
 namespace config
