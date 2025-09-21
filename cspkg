@@ -270,7 +270,7 @@ namespace env
     @end
     function arch()
         if env.covscript_std() >= "250901"
-            return env.arch()
+            return system.arch_name
         end
         if system.is_platform_unix()
             var p = process.exec("arch", {})
