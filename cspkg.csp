@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.5.5"
+constant cspkg_version = "2.5.6"
 
 import codec.json as json
 import process
@@ -400,6 +400,36 @@ function draw_separator()
     system.out.println("")
 end
 
+var src_reg = regex.build("^(.*?)/index/(.*)/([^/]+)\\.json$")
+var tgt_reg = regex.build("^(.*)/([^/]+)\\.(cse|csp|csym|ecsx)$")
+
+function pack_info_fixer(url)
+    var info = utils.get_content(url)
+    if info == null || info.empty()
+        return false
+    end
+    info = utils.parse_json(info, new hash_map)
+    if !info.exist("Target")
+        return null
+    end
+    var target_url = info.Target
+    var src_m = src_reg.match(url)
+    var tgt_m = tgt_reg.match(target_url)
+    if src_m.empty() || tgt_m.empty() || src_m.size() != 4 || tgt_m.size() != 4
+        return null
+    end
+    if src_m.str(3) != tgt_m.str(2)
+        return null
+    end
+    var prefix = src_m.str(1) + "/" + src_m.str(2)
+    if prefix == tgt_m.str(1)
+        return info
+    end
+    info.Target = prefix + "/" + tgt_m.str(2) + "." + tgt_m.str(3)
+    system.out.println("cspkg: automatically correct unmatched URL from\n\t" + target_url + "\n\tto " + info.Target)
+    return info
+end
+
 class cspkg_install
     var package_list = new hash_map
     var package_info = new hash_map
@@ -476,12 +506,11 @@ class cspkg_install
             cspkg_log("cspkg: can not find corresponding package information: \'" + pac + "\'.")
             return
         end
-        var info = utils.get_content(package_list.at(pac))
-        if info == null || info.empty()
+        var info = pack_info_fixer(package_list.at(pac))
+        if info == null
             cspkg_log("cspkg: timeout when fetching package information: \'" + pac + "\'.")
             return
         end
-        info = utils.parse_json(info, new hash_map)
         foreach deps in info.Dependencies do find_deps(deps)
         package_info.insert(pac, info)
         deps_set.insert(pac)
@@ -572,11 +601,10 @@ class cspkg_install
                                     name += "." + ext
                                 end
                                 if package_list.exist(name)
-                                    var info = utils.get_content(package_list[name])
-                                    if info == null || info.empty()
+                                    var info = pack_info_fixer(package_list[name])
+                                    if info == null
                                         cspkg_log("cspkg: timeout when fetching package information: \'" + it.name + "\'.")
                                     else
-                                        info = utils.parse_json(info, new hash_map)
                                         info["FileName"] = it.name
                                         local_pac.insert(name, info)
                                         cspkg_log("cspkg: found " + info.Info + "(" + info.Version + ")")
