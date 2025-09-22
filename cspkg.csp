@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.5.4"
+constant cspkg_version = "2.5.5"
 
 import codec.json as json
 import process
@@ -254,7 +254,7 @@ namespace env
     end
     function platform()
         if env.covscript_std() >= "250901"
-            return env.platform()
+            return system.os_name
         end
         if system.is_platform_windows()
             return "winucrt"

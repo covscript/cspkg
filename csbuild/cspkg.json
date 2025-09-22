@@ -3,7 +3,7 @@
     "Name": "cspkg",
     "Info": "CovScript Package Manager",
     "Author": "CovScript Organization",
-    "Version": "2.5.4",
+    "Version": "2.5.5",
     "Target": "cspkg.csp",
     "Dependencies": [
         "codec",

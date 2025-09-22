@@ -249,7 +249,7 @@ namespace env
     end
     function platform()
         if env.covscript_std() >= "250901"
-            return env.platform()
+            return system.os_name
         end
         if system.is_platform_windows()
             return "winucrt"
