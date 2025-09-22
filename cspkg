@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
 #
-# Covariant Script Package Manager Launcher v1.1.1
+# Covariant Script Package Manager Launcher v1.1.2
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -357,6 +357,36 @@ function cspkg_log(msg)
     log_impl.log.println(msg)
 end
 
+var src_reg = regex.build("^(.*?)/index/(.*)/([^/]+)\\.json$")
+var tgt_reg = regex.build("^(.*)/([^/]+)\\.(cse|csp|csym|ecsx)$")
+
+function pack_info_fixer(url)
+    var info = utils.get_content(url)
+    if info == null || info.empty()
+        return false
+    end
+    info = utils.parse_json(info, new hash_map)
+    if !info.exist("Target")
+        return null
+    end
+    var target_url = info.Target
+    var src_m = src_reg.match(url)
+    var tgt_m = tgt_reg.match(target_url)
+    if src_m.empty() || tgt_m.empty() || src_m.size() != 4 || tgt_m.size() != 4
+        return null
+    end
+    if src_m.str(3) != tgt_m.str(2)
+        return null
+    end
+    var prefix = src_m.str(1) + "/" + src_m.str(2)
+    if prefix == tgt_m.str(1)
+        return info
+    end
+    info.Target = prefix + "/" + tgt_m.str(2) + "." + tgt_m.str(3)
+    system.out.println("cspkg: automatically correct unmatched URL from\n\t" + target_url + "\n\tto " + info.Target)
+    return info
+end
+
 # Main Function
 
 function cspkg_main()
@@ -392,12 +422,11 @@ function cspkg_main()
         cspkg_log("cspkg: failed to find cspkg from \"" + target_repo + "\"")
         return
     end
-    var remote_info = utils.get_content(utils.process_url(target_repo) + "index/universal/cspkg.json")
-    if remote_info == null || remote_info.empty()
+    var remote_info = pack_info_fixer(utils.process_url(target_repo) + "index/universal/cspkg.json")
+    if remote_info == null
         cspkg_log("cspkg: broken source on \"" + target_repo + "\"")
         return
     end
-    remote_info = utils.parse_json(remote_info, new hash_map)
     var packages = null
     if system.file.exist(config.compose_packages())
         packages = utils.open_json(config.compose_packages())
@@ -405,22 +434,9 @@ function cspkg_main()
         packages = new hash_map
     end
     var do_upgrade = false
-    if !packages.exist("cspkg")
-        if !config.cancel_prompt
-            if !system.file.exist(config.compose_cspkg_package())
-                system.out.println("Installing cspkg...")
-            else
-                system.out.println("Fix broken cspkg installation...")
-            end
-            system.out.println("Do you want to continue?[y/n]")
-            if system.console.getch().tolower() != 'y'
-                cspkg_log("cspkg: installation canceled.")
-                system.exit(0)
-            end
-        end
-        packages["cspkg"] = remote_info
-        packages["cspkg"]["FileName"] = "cspkg.csp"
-    else
+    var info_exist = packages.exist("cspkg")
+    var file_exist = system.file.exist(config.compose_cspkg_package())
+    if info_exist && file_exist
         if remote_info.Version > packages["cspkg"].Version
             do_upgrade = true
             if !config.cancel_prompt
@@ -434,12 +450,23 @@ function cspkg_main()
             packages["cspkg"] = remote_info
             packages["cspkg"]["FileName"] = "cspkg.csp"
         else
-            if !system.file.exist(config.compose_cspkg_package())
-                cspkg_print("Fix broken cspkg installation...")
+            return
+        end
+    else
+        if !config.cancel_prompt
+            if info_exist || file_exist
+                system.out.println("Fix broken cspkg installation...")
             else
-                return
+                system.out.println("Installing cspkg...")
+            end
+            system.out.println("Do you want to continue?[y/n]")
+            if system.console.getch().tolower() != 'y'
+                cspkg_log("cspkg: installation canceled.")
+                system.exit(0)
             end
         end
+        packages["cspkg"] = remote_info
+        packages["cspkg"]["FileName"] = "cspkg.csp"
     end
     var error_value = utils.get_file(remote_info.Target, config.compose_cspkg_package())
     switch error_value
