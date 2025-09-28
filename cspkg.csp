@@ -1,5 +1,5 @@
 #
-# Covariant Script Package Manager v2.5.7
+# Covariant Script Package Manager
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.5.7"
+constant cspkg_version = "2.5.8"
 
 import codec.json as json
 import process
@@ -963,7 +963,7 @@ end
 
 function build_release(base_path, url, flat)
     var path = base_path + "csbuild"
-    if !utils.check_url(url)
+    if utils.parse_url(url) == null
         cspkg_log("cspkg: error when parsing URL \'" + url + "\".")
         system.exit(0)
     end
@@ -976,21 +976,24 @@ function build_release(base_path, url, flat)
     end
     var idx_path = base_path, pkg_path = base_path, idx_os_path = base_path, pkg_os_path = base_path
     if !flat
-        idx_path = base_path + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + "universal"
+        idx_path = base_path + "cspkg-repo" + system.path.separator + "index" + system.path.separator + "universal"
         pkg_path = base_path + "cspkg-repo" + system.path.separator + "universal"
-        idx_os_path = base_path + "cspkg-repo" + system.path.separator + "index_files" + system.path.separator + "packages" + system.path.separator + env.platform() + system.path.separator + env.arch()
+        idx_os_path = base_path + "cspkg-repo" + system.path.separator + "index" + system.path.separator + env.platform() + system.path.separator + env.arch()
         pkg_os_path = base_path + "cspkg-repo" + system.path.separator + env.platform() + system.path.separator + env.arch()
     end
+    var pkg_idx = {}, pkg_os_idx = {}
     var json_reg = regex.build("^(.*)\\.json$")
     var files = system.path.scan(path)
+    var valid_files = 0
     foreach entry in files
         if entry.type == system.path.type.reg
             if !json_reg.match(entry.name).empty()
+                ++valid_files
                 var info = utils.open_json(path + system.path.separator + entry.name)
                 if info.Type == "Extension"
                     info.Version += "_ABI" + env.covscript_abi()
                 end
-                cspkg_print("Building package " + info.Name + "(" + info.Version + ")...")
+                cspkg_print("Collecting " + info.Name + "(" + info.Version + ")...")
                 var file_reg = regex.build("^.*?(\\w+\\.(cse|csp|csym|ecsx))$")
                 var file_name = file_reg.match(info.Target)
                 if file_name.empty() || !system.file.exist(base_path + info.Target)
@@ -1008,6 +1011,7 @@ function build_release(base_path, url, flat)
                     end
                     info.erase("Type")
                     utils.save_json(info, idx_os_path + system.path.separator + info.Name + ".json")
+                    pkg_os_idx.push_back(info.Name)
                     continue
                 end
                 if info.Type == "Package"
@@ -1021,10 +1025,18 @@ function build_release(base_path, url, flat)
                     end
                     info.erase("Type")
                     utils.save_json(info, idx_path + system.path.separator + info.Name + ".json")
+                    pkg_idx.push_back(info.Name)
                 end
             end
         end
     end
+    if valid_files == 0
+        cspkg_log("Configure file not found in module \'" + it + "\'")
+        continue
+    end
+    utils.save_json(pkg_idx, idx_path + system.path.separator + "index.json")
+    utils.save_json(pkg_os_idx, idx_os_path + system.path.separator + "index.json")
+    utils.save_json({"universal", env.platform() + "/" + env.arch()}, "cspkg-repo" + system.path.separator + "index.json")
 end
 
 function build_compile(source_path, cxx_opts)
