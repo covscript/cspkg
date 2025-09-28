@@ -1,5 +1,5 @@
 #
-# Covariant Script Package Manager v2.5.0
+# Covariant Script Package Manager v2.5.7
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.5.6"
+constant cspkg_version = "2.5.7"
 
 import codec.json as json
 import process
@@ -402,6 +402,7 @@ end
 
 var src_reg = regex.build("^(.*?)/index/(.*)/([^/]+)\\.json$")
 var tgt_reg = regex.build("^(.*)/([^/]+)\\.(cse|csp|csym|ecsx)$")
+var ign_ext = {"cse", "csp"}.to_hash_set()
 
 function pack_info_fixer(url)
     var info = utils.get_content(url)
@@ -418,7 +419,8 @@ function pack_info_fixer(url)
     if src_m.empty() || tgt_m.empty() || src_m.size() != 4 || tgt_m.size() != 4
         return null
     end
-    if src_m.str(3) != tgt_m.str(2)
+    var ext = ign_ext.exist(tgt_m.str(3)) ? "" : "." + tgt_m.str(3)
+    if src_m.str(3) != tgt_m.str(2) + ext
         return null
     end
     var prefix = src_m.str(1) + "/" + src_m.str(2)
