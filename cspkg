@@ -418,7 +418,6 @@ function cspkg_main()
     end
     var source_json = utils.get_content(utils.process_url(target_repo) + "index/universal/index.json")
     if source_json == null || source_json.empty() || !utils.parse_json(source_json, new array).to_hash_set().exist("cspkg")
-        system.out.println(utils.process_url(target_repo) + "universal/index.json")
         cspkg_log("cspkg: failed to find cspkg from \"" + target_repo + "\"")
         return
     end
