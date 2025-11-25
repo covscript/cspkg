@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.5.8"
+constant cspkg_version = "2.5.9"
 
 import codec.json as json
 import process
@@ -1084,7 +1084,7 @@ function build_compile(source_path, cxx_opts)
     var file_reg = regex.build("^.*?(\\w+)\\.(c|cc|cpp|cxx)$")
     var file_name = file_reg.match(source_path)
     cspkg_log("Building module \'" + file_name.str(1) + ".cse\'...")
-    system.run("g++ -std=c++14 --shared -fPIC -O3 -I\"" + csdev_path + system.path.separator + "include\" \"" + source_path + "\" -L\"" + csdev_path + system.path.separator + "lib\" -lcovscript -o " + file_name.str(1) + ".cse " + cxx_opts)
+    system.run("g++ -std=c++17 --shared -fPIC -O2 -I\"" + csdev_path + system.path.separator + "include\" \"" + source_path + "\" -L\"" + csdev_path + system.path.separator + "lib\" -lcovscript -o " + file_name.str(1) + ".cse " + cxx_opts)
 end
 
 function run_build(opt, args)
