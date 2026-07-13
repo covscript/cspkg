@@ -157,3 +157,20 @@ After that, you can use `cspkg build --release <Source URL>` for auto releasing,
     + Universal Package(No platform dependency): cspkg/universal.json
     + Platform Specified Package: cspkg/OS_Architectural.json
 3. Create new pull request
+
+## Examples
+
+See the [examples/](./examples/) directory for CSPKG package examples:
+
+- `examples/universal/` — Platform-independent CovScript packages (`.csp`)
+- `examples/index.json` — Example CSPKG source index
+
+### CI/CD for packages
+
+You can use GitHub Actions to automatically build and release your package:
+
+```yaml
+# .github/workflows/schedule.yml — builds with latest CovScript SDK on schedule
+```
+
+See the [csbuild documentation](https://github.com/covscript/csbuild) for CI setup instructions.

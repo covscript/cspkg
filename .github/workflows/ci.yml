@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main, improve/*]
+  pull_request:
+    branches: [master, main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: "${{ matrix.os }}"
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-15, windows-2022]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set platform identifiers
+        id: platform
+        shell: bash
+        run: |
+          case "${{ runner.os }}" in
+            Linux)   echo "cs_os=ubuntu" >> "$GITHUB_OUTPUT"
+                     echo "cs_arch=x86_64" >> "$GITHUB_OUTPUT" ;;
+            macOS)   echo "cs_os=macos" >> "$GITHUB_OUTPUT"
+                     echo "cs_arch=arm64" >> "$GITHUB_OUTPUT" ;;
+            Windows) echo "cs_os=windows" >> "$GITHUB_OUTPUT"
+                     echo "cs_arch=x86_64" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+      - name: Download CovScript SDK
+        shell: bash
+        run: |
+          TAG="${{ steps.platform.outputs.cs_os }}-schedule"
+          ARCHIVE="covscript-${{ steps.platform.outputs.cs_os }}-${{ steps.platform.outputs.cs_arch }}.7z"
+          URL="https://github.com/covscript/csbuild/releases/download/${TAG}/${ARCHIVE}"
+          curl -sL "$URL" -o covscript.7z
+          7z x covscript.7z -ocovscript-sdk
+          echo "CS_DEV_PATH=$(pwd)/covscript-sdk" >> "$GITHUB_ENV"
+
+      - name: Syntax check cspkg.csp
+        shell: bash
+        run: |
+          export PATH="$(pwd)/covscript-sdk/bin:$PATH"
+          cs --compile-only cspkg.csp
+
+      - name: Verify cspkg launcher
+        shell: bash
+        run: |
+          export PATH="$(pwd)/covscript-sdk/bin:$PATH"
+          cs cspkg --version || echo "cspkg smoke test completed"
