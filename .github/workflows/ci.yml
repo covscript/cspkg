@@ -37,23 +37,31 @@ jobs:
           esac
 
       - name: Download CovScript SDK
+        id: sdk
         shell: bash
         run: |
           TAG="${{ steps.platform.outputs.cs_os }}-schedule"
-          ARCHIVE="covscript-${{ steps.platform.outputs.cs_os }}-${{ steps.platform.outputs.cs_arch }}.7z"
+          ARCHIVE="covscript-${{ steps.platform.outputs.cs_os }}-${{ steps.platform.outputs.cs_arch }}-nightly.7z"
           URL="https://github.com/covscript/csbuild/releases/download/${TAG}/${ARCHIVE}"
-          curl -sL "$URL" -o covscript.7z
-          7z x covscript.7z -ocovscript-sdk
-          echo "CS_DEV_PATH=$(pwd)/covscript-sdk" >> "$GITHUB_ENV"
+          curl -fsSL "$URL" -o sdk.7z
+          7z x sdk.7z -y
+          mv build covscript-home
+          CS_HOME="${{ github.workspace }}/covscript-home"
+          CS_HOME="${CS_HOME//\\//}"
+          echo "cs_home=${CS_HOME}" >> "$GITHUB_OUTPUT"
 
       - name: Syntax check cspkg.csp
         shell: bash
+        env:
+          CS_DEV_PATH: ${{ steps.sdk.outputs.cs_home }}/
         run: |
-          export PATH="$(pwd)/covscript-sdk/bin:$PATH"
+          export PATH="${{ steps.sdk.outputs.cs_home }}/bin:$PATH"
           cs --compile-only cspkg.csp
 
       - name: Verify cspkg launcher
         shell: bash
+        env:
+          CS_DEV_PATH: ${{ steps.sdk.outputs.cs_home }}/
         run: |
-          export PATH="$(pwd)/covscript-sdk/bin:$PATH"
+          export PATH="${{ steps.sdk.outputs.cs_home }}/bin:$PATH"
           cs cspkg --version || echo "cspkg smoke test completed"
