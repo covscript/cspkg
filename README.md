@@ -204,7 +204,7 @@ This descriptor differs from the source-index file in Step 1: its `Target` is a
     "Name": "cspkg",
     "Info": "CovScript Package Manager",
     "Author": "CovScript Organization",
-    "Version": "2.6.1",
+    "Version": "2.6.2",
     "Target": "cspkg.csp",
     "Source": "cspkg.ecs",
     "Dependencies": ["codec", "process", "regex", "curl"]

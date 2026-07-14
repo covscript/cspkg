@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.6.1"
+constant cspkg_version = "2.6.2"
 
 import codec.json as json
 import process
@@ -1060,16 +1060,26 @@ end
 function build_ecs_compile(source_path, out_dir)
     if !system.file.exist(source_path)
         cspkg_log("cspkg: source file \'" + source_path + "\' not found.")
-        system.exit(1)
+        return false
     end
     cspkg_log("Compiling CovScript source \'" + source_path + "\'...")
-    system.run("ecs -o \"" + out_dir + "\" -g -c -f -u UTF8 \"" + source_path + "\"")
+@begin
+    var (stdout, stderr, code) = (new process.builder).shell(process.default_shell()).cmd("ecs")
+    .arg({"-o", out_dir, "-g", "-c", "-f", "-u", "UTF8", source_path})
+    .inherit_env(true).start().communicate()
+@end
+    if code != 0
+        cspkg_log("cspkg: error when compiling CovScript source \'" + source_path + "\'.")
+        cspkg_log(stdout)
+        cspkg_log(stderr)
+    end
+    return code == 0
 end
 
 function build_compile(source_path, cxx_opts)
     if !system.file.exist(source_path)
         cspkg_log("cspkg: target file \'" + source_path + "\' not found.")
-        system.exit(1)
+        return false
     end
     block
         var sys_paths = system.getenv("PATH").split({system.path.delimiter})
@@ -1111,7 +1121,19 @@ function build_compile(source_path, cxx_opts)
     var file_reg = regex.build("^.*?(\\w+)\\.(c|cc|cpp|cxx)$")
     var file_name = file_reg.match(source_path)
     cspkg_log("Building module \'" + file_name.str(1) + ".cse\'...")
-    system.run("g++ -std=c++17 --shared -fPIC -O2 -I\"" + csdev_path + system.path.separator + "include\" \"" + source_path + "\" -L\"" + csdev_path + system.path.separator + "lib\" -lcovscript -o " + file_name.str(1) + ".cse " + cxx_opts)
+@begin
+    var (stdout, stderr, code) = (new process.builder).shell(process.default_shell()).cmd("g++")
+    .arg({"-std=c++17", "--shared", "-fPIC", "-O2", "-I" + csdev_path + system.path.separator + "include",
+        source_path, "-L" + csdev_path + system.path.separator + "lib", "-lcovscript", "-o",
+        file_name.str(1) + ".cse", cxx_opts})
+    .inherit_env(true).start().communicate()
+@end
+    if code != 0
+        cspkg_log("cspkg: error when compiling extension \'" + source_path + "\'.")
+        cspkg_log(stdout)
+        cspkg_log(stderr)
+    end
+    return code == 0
 end
 
 function run_build(opt, args)
@@ -1160,9 +1182,13 @@ function run_build(opt, args)
                 var opts = new string
                 for i = 1, i < opt.size, ++i do opts += opt[i] + " "
                 if !ecs_source_reg.match(args[0]).empty()
-                    build_ecs_compile(args[0], ".")
+                    if !build_ecs_compile(args[0], ".")
+                        system.exit(1)
+                    end
                 else
-                    build_compile(args[0], opts)
+                    if !build_compile(args[0], opts)
+                        system.exit(1)
+                    end
                 end
             end
         end
