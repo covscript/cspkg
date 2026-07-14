@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.6.0"
+constant cspkg_version = "2.6.1"
 
 import codec.json as json
 import process
@@ -1325,6 +1325,7 @@ function show_help(opt, args)
         "    upgrade   | -u                Upgrade local packages\n" +
         "    build     | -b  [Path]        Build & test local packages\n" +
         "    list      | -l                List current packages\n" +
+        "    doctor                        Diagnose and optionally fix common problems\n" +
         "    help      | -h                Show help information\n" +
         "    version   | -v                Show version information\n" +
         "\nOptions:\n" +

@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
 #
-# Covariant Script Package Manager Launcher v1.1.3
+# Covariant Script Package Manager Launcher v1.2.0
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,6 +34,8 @@ import codec.json as json
 import process
 import regex
 import curl
+
+constant launcher_version = "1.2.0"
 
 namespace utils
     function open_json(path)
@@ -370,6 +372,17 @@ var src_reg = regex.build("^(.*?)/index/(.*)/([^/]+)\\.json$")
 var tgt_reg = regex.build("^(.*)/([^/]+)\\.(cse|csp|csym|ecsx)$")
 var ign_ext = {"cse", "csp"}.to_hash_set()
 
+# True if `text` parses to a JSON array containing `key`; false on any other shape.
+# A plain try/catch can't guard this: calling to_hash_set() on a non-array
+# (e.g. a JSON object -> hash_map) raises an uncatchable "Key does not exist".
+function json_list_has(text, key)
+    var parsed = utils.parse_json(text, new array)
+    if typeid parsed != typeid array
+        return false
+    end
+    return parsed.to_hash_set().exist(key)
+end
+
 function pack_info_fixer(url)
     var info = utils.get_content(url)
     if info == null || info.empty()
@@ -415,7 +428,7 @@ function cspkg_main()
             cspkg_log("cspkg: failed to fetch index from \"" + source_url + "\"")
             continue
         end
-        if utils.parse_json(source_json, new array).to_hash_set().exist("universal")
+        if json_list_has(source_json, "universal")
             target_repo = source_url
             break
         else
@@ -428,7 +441,7 @@ function cspkg_main()
         return
     end
     var source_json = utils.get_content(utils.process_url(target_repo) + "index/universal/index.json")
-    if source_json == null || source_json.empty() || !utils.parse_json(source_json, new array).to_hash_set().exist("cspkg")
+    if source_json == null || source_json.empty() || !json_list_has(source_json, "cspkg")
         cspkg_log("cspkg: failed to find cspkg from \"" + target_repo + "\"")
         return
     end
@@ -497,6 +510,547 @@ function cspkg_main()
     end
 end
 
+# Doctor: diagnose (and optionally fix) common problems
+
+namespace doctor
+    var ok_n = 0, warn_n = 0, fail_n = 0
+    var fixes = null
+    var bad_source = false
+    function reset()
+        doctor.ok_n = 0
+        doctor.warn_n = 0
+        doctor.fail_n = 0
+        doctor.fixes = new array
+        doctor.bad_source = false
+    end
+    function report(level, msg)
+        system.out.println("[" + level + "] " + msg)
+        switch level
+            case "OK"
+                ++doctor.ok_n
+            end
+            case "WARN"
+                ++doctor.warn_n
+            end
+            case "FAIL"
+                ++doctor.fail_n
+            end
+        end
+    end
+    function add_fix(kind, desc)
+        foreach f in doctor.fixes
+            if f.kind == kind
+                return
+            end
+        end
+        var nf = new hash_map
+        nf.insert("kind", kind)
+        nf.insert("desc", desc)
+        doctor.fixes.push_back(nf)
+    end
+    function join(arr)
+        var s = new string
+        foreach x in arr
+            if s.size > 0
+                s += ", "
+            end
+            s += x
+        end
+        return s
+    end
+    function is_object(v)
+        try
+            v.exist("__cspkg_probe__")
+            return true
+        catch e
+            return false
+        end
+    end
+    # Return obj[key] only if obj is an object, has key, and the value is a string; else null.
+    # Guards against uncatchable errors from missing keys / wrong value types.
+    function field_string(obj, key)
+        if !doctor.is_object(obj) || !obj.exist(key)
+            return null
+        end
+        var v = obj[key]
+        if typeid v != typeid string
+            return null
+        end
+        return v
+    end
+    function safe_split_semi(v)
+        try
+            return v.split({';'})
+        catch e
+            return null
+        end
+    end
+    # Read a JSON file and return it only if it parses to an object; null otherwise.
+    function load_object(path)
+        var raw = doctor.read_file(path)
+        if raw == null
+            return null
+        end
+        var parsed = null
+        try
+            parsed = json.to_var(json.from_string(raw))
+        catch e
+            return null
+        end
+        if !doctor.is_object(parsed)
+            return null
+        end
+        return parsed
+    end
+    function read_file(path)
+        var ins = iostream.fstream(path, iostream.openmode.in)
+        if !ins.good()
+            return null
+        end
+        var buff = new string
+        loop
+            var ch = ins.get()
+            if ins.eof()
+                break
+            else
+                buff += ch
+            end
+        end
+        return buff
+    end
+    function is_writable_dir(dir)
+        var probe = dir + system.path.separator + ".cspkg_doctor_probe"
+        try
+            var ofs = iostream.fstream(probe, iostream.openmode.out)
+            var g = ofs.good()
+            ofs = null
+            if g
+                system.file.remove(probe)
+            end
+            return g
+        catch e
+            return false
+        end
+    end
+    function find_in_path(names)
+        try
+            var sys_paths = system.getenv("PATH").split({system.path.delimiter})
+            foreach it in sys_paths
+                if system.path.exist(it)
+                    foreach entry in system.path.scan(it)
+                        if entry.type != system.path.type.dir && names.exist(entry.name)
+                            return it + system.path.separator + entry.name
+                        end
+                    end
+                end
+            end
+        catch e; end
+        return null
+    end
+    function preload_config()
+        var loaded = null
+        if system.file.exist(config.compose_config())
+            var raw = doctor.read_file(config.compose_config())
+            if raw != null
+                try
+                    loaded = json.to_var(json.from_string(raw))
+                catch e
+                    loaded = null
+                end
+            end
+        end
+        if loaded == null
+            config.content = clone(config.default_content)
+            return
+        end
+        try
+            foreach it in config.default_content
+                if !loaded.exist(it.first)
+                    loaded.insert(it.first, it.second)
+                end
+            end
+        catch e
+            loaded = clone(config.default_content)
+        end
+        config.content = loaded
+    end
+    function check_environment()
+        system.out.println("Environment")
+        try
+            doctor.report("OK", "CovScript STD: " + env.covscript_std())
+        catch e
+            doctor.report("FAIL", "cannot query CovScript STD version")
+        end
+        try
+            doctor.report("OK", "platform: " + env.platform() + ", arch: " + env.arch())
+        catch e
+            doctor.report("FAIL", "cannot detect platform/arch")
+        end
+        var uh = null
+        try
+            uh = env.user_home()
+        catch e; end
+        if uh != null && uh.size > 0 && system.path.exist(uh)
+            doctor.report("OK", "USER_HOME: " + uh)
+        else
+            doctor.report("FAIL", "USER_HOME not resolvable")
+        end
+        var ch = env.covscript_home()
+        if ch != null && system.path.exist(ch)
+            doctor.report("OK", "COVSCRIPT_HOME: " + ch)
+        else
+            doctor.report("FAIL", "COVSCRIPT_HOME not found: " + to_string(ch))
+        end
+        var imp = env.covscript_home() + system.path.separator + "imports"
+        if !system.path.exist(imp)
+            doctor.report("FAIL", "imports directory missing: " + imp)
+            doctor.add_fix("mkdir_imports", "create imports directory")
+        else
+            if doctor.is_writable_dir(imp)
+                doctor.report("OK", "imports writable: " + imp)
+            else
+                doctor.report("WARN", "imports not writable (try running as administrator): " + imp)
+            end
+        end
+        system.out.println("")
+    end
+    function check_config()
+        system.out.println("Configuration")
+        if system.path.exist(config.compose_home())
+            doctor.report("OK", "cspkg home: " + config.compose_home())
+        else
+            doctor.report("FAIL", "cspkg home missing: " + config.compose_home())
+            doctor.add_fix("mkdir_home", "create " + config.compose_home())
+        end
+        var cfg = config.compose_config()
+        if !system.file.exist(cfg)
+            doctor.report("FAIL", "config.json missing")
+            doctor.add_fix("write_config", "create config.json from defaults")
+            system.out.println("")
+            return
+        end
+        var raw = doctor.read_file(cfg)
+        var parsed = null
+        try
+            parsed = json.to_var(json.from_string(raw))
+        catch e
+            parsed = null
+        end
+        if parsed == null
+            doctor.report("FAIL", "config.json is not valid JSON")
+            doctor.add_fix("write_config", "rebuild config.json from defaults")
+            system.out.println("")
+            return
+        end
+        if !doctor.is_object(parsed)
+            doctor.report("FAIL", "config.json is not a JSON object")
+            doctor.add_fix("write_config", "rebuild config.json from defaults")
+            system.out.println("")
+            return
+        end
+        doctor.report("OK", "config.json valid: " + cfg)
+        var missing = new array
+        foreach k in {"arch", "source", "timeout_ms"}
+            if !parsed.exist(k)
+                missing.push_back(k)
+            end
+        end
+        if missing.empty()
+            doctor.report("OK", "required config keys present")
+        else
+            doctor.report("WARN", "missing config keys: " + doctor.join(missing))
+            doctor.add_fix("write_config", "merge default values for missing keys")
+        end
+        if parsed.exist("timeout_ms")
+            var tv = parsed.timeout_ms
+            var t = 0
+            if typeid tv == typeid string
+                try
+                    t = tv.to_number()
+                catch e
+                    t = 0
+                end
+            else
+                if typeid tv == typeid number
+                    t = tv
+                end
+            end
+            if t <= 0
+                doctor.report("WARN", "timeout_ms is not a positive number")
+            end
+        end
+        if parsed.exist("source")
+            var srcs = doctor.safe_split_semi(parsed.source)
+            if srcs == null
+                doctor.report("FAIL", "source is not a string")
+                doctor.bad_source = true
+                doctor.add_fix("write_config", "reset invalid 'source' to default")
+            else
+                foreach su in srcs
+                    var ui = utils.parse_url(su)
+                    if ui == null
+                        doctor.report("FAIL", "unparseable source URL: " + su)
+                    else
+                        if ui.protocol != "http" && ui.protocol != "https" && ui.protocol != "file"
+                            doctor.report("FAIL", "unsupported source protocol: " + su)
+                        else
+                            doctor.report("OK", "source URL ok: " + su)
+                        end
+                    end
+                end
+            end
+        end
+        if parsed.exist("proxy")
+            var pv = doctor.field_string(parsed, "proxy")
+            if pv == null
+                doctor.report("WARN", "proxy is not a string")
+            else
+                if utils.parse_url(pv) == null
+                    doctor.report("WARN", "proxy URL not parseable: " + pv)
+                else
+                    doctor.report("OK", "proxy set: " + pv)
+                end
+            end
+        end
+        system.out.println("")
+    end
+    function check_install()
+        system.out.println("cspkg installation")
+        var has_record = false, ver = null
+        if system.file.exist(config.compose_packages())
+            var pkgs = doctor.load_object(config.compose_packages())
+            if pkgs == null
+                doctor.report("FAIL", "packages.json is not a valid JSON object (try 'cspkg install --import')")
+            else
+                if pkgs.exist("cspkg")
+                    has_record = true
+                    ver = doctor.field_string(pkgs["cspkg"], "Version")
+                end
+            end
+        end
+        var has_file = system.file.exist(config.compose_cspkg_package())
+        if has_record && has_file
+            doctor.report("OK", "cspkg installed" + (ver == null ? "" : " (" + ver + ")"))
+        else
+            if !has_record && !has_file
+                doctor.report("FAIL", "cspkg is not installed")
+            else
+                doctor.report("FAIL", "broken cspkg installation (record/file mismatch)")
+            end
+            doctor.add_fix("cspkg_main", "reinstall/repair cspkg")
+        end
+        system.out.println("")
+    end
+    function check_sources()
+        system.out.println("Remote sources")
+        var any_valid = false
+        var srcs = doctor.safe_split_semi(config.content.source)
+        if srcs == null
+            doctor.report("FAIL", "source config is not a string")
+            system.out.println("")
+            return
+        end
+        foreach su in srcs
+            if utils.parse_url(su) == null
+                doctor.report("FAIL", "skip unparseable source: " + su)
+                continue
+            end
+            var idx = utils.get_content(utils.process_url(su) + "index.json")
+            if idx == null || idx.empty()
+                doctor.report("FAIL", "unreachable: " + su)
+                continue
+            end
+            if !json_list_has(idx, "universal")
+                doctor.report("FAIL", "not a valid cspkg repo (no 'universal'): " + su)
+                continue
+            end
+            var first = !any_valid
+            any_valid = true
+            var suffix = first ? "  (active)" : ""
+            var uni = utils.get_content(utils.process_url(su) + "index/universal/index.json")
+            var has_cspkg = uni != null && !uni.empty() && json_list_has(uni, "cspkg")
+            if has_cspkg
+                doctor.report("OK", "valid repo, cspkg available: " + su + suffix)
+            else
+                doctor.report("WARN", "valid repo but cspkg not listed: " + su + suffix)
+            end
+        end
+        if !any_valid
+            doctor.report("FAIL", "no reachable/valid source")
+        end
+        system.out.println("")
+    end
+    function check_consistency()
+        system.out.println("Local packages")
+        var imp = env.covscript_home() + system.path.separator + "imports"
+        var pkgs = null
+        if system.file.exist(config.compose_packages())
+            pkgs = doctor.load_object(config.compose_packages())
+        end
+        if pkgs == null || !system.path.exist(imp)
+            doctor.report("INFO", "no valid local package records to check")
+            system.out.println("")
+            return
+        end
+        var reg = regex.build("^(.*)\\.(cse|csp|csym|ecsx)$")
+        var local_files = new hash_set
+        foreach e in system.path.scan(imp)
+            if e.type == system.path.type.reg
+                var fname = e.name
+                var m = reg.match(fname)
+                if !m.empty()
+                    var name = m.str(1)
+                    var ext = m.str(2)
+                    if ext == "csym" || ext == "ecsx"
+                        name += "." + ext
+                    end
+                    local_files.insert(name)
+                end
+            end
+        end
+        var orphan = new array
+        foreach it in pkgs
+            if !local_files.exist(it.first)
+                orphan.push_back(it.first)
+            end
+        end
+        var unmanaged = new array
+        foreach n in local_files
+            if !pkgs.exist(n)
+                unmanaged.push_back(n)
+            end
+        end
+        var broken = new hash_set
+        foreach it in pkgs
+            if doctor.is_object(it.second) && it.second.exist("Dependencies") && typeid it.second.Dependencies == typeid array
+                foreach dep in it.second.Dependencies
+                    if typeid dep == typeid string && !pkgs.exist(dep)
+                        broken.insert(dep)
+                    end
+                end
+            end
+        end
+        var need_fix = false
+        if !orphan.empty()
+            doctor.report("FAIL", "orphaned records (no file): " + doctor.join(orphan))
+            need_fix = true
+        end
+        if !broken.empty()
+            var barr = new array
+            foreach d in broken do barr.push_back(d)
+            doctor.report("FAIL", "broken dependencies: " + doctor.join(barr))
+            need_fix = true
+        end
+        if !unmanaged.empty()
+            doctor.report("WARN", "unmanaged files in imports: " + doctor.join(unmanaged))
+        end
+        if orphan.empty() && broken.empty() && unmanaged.empty()
+            doctor.report("OK", "local packages consistent")
+        end
+        if need_fix
+            doctor.add_fix("install_fix", "run 'install --fix' to repair records/dependencies")
+        end
+        system.out.println("")
+    end
+    function check_tools()
+        system.out.println("Optional build tools")
+        var ecs = doctor.find_in_path({"ecs", "ecs.exe", "ecs.bat", "ecs.cmd"}.to_hash_set())
+        if ecs != null
+            doctor.report("INFO", "ecs found: " + ecs)
+        else
+            doctor.report("INFO", "ecs not found (needed to build .ecs packages)")
+        end
+        var gxx = doctor.find_in_path({"g++", "g++.exe"}.to_hash_set())
+        var dev = null
+        try
+            dev = system.getenv("CS_DEV_PATH")
+        catch e; end
+        if gxx != null && dev != null
+            doctor.report("INFO", "g++ and CS_DEV_PATH present (extension building ready)")
+        else
+            var miss = new string
+            if gxx == null
+                miss += "g++ "
+            end
+            if dev == null
+                miss += "CS_DEV_PATH"
+            end
+            doctor.report("INFO", "extension building unavailable (missing: " + miss + ")")
+        end
+        system.out.println("")
+    end
+    function apply_fixes()
+        var kinds = new hash_set
+        foreach f in doctor.fixes do kinds.insert(f.kind)
+        if kinds.exist("mkdir_home")
+            system.path.mkdir_p(config.compose_home())
+            cspkg_log("cspkg: created " + config.compose_home())
+        end
+        if kinds.exist("mkdir_imports")
+            system.path.mkdir_p(env.covscript_home() + system.path.separator + "imports")
+            cspkg_log("cspkg: created imports directory")
+        end
+        if kinds.exist("write_config")
+            if doctor.bad_source
+                config.content["source"] = config.default_content["source"]
+            end
+            system.path.mkdir_p(config.compose_home())
+            config.save()
+            cspkg_log("cspkg: wrote " + config.compose_config())
+        end
+        if kinds.exist("cspkg_main")
+            cspkg_log("cspkg: repairing cspkg installation...")
+            cspkg_main()
+        end
+        if kinds.exist("install_fix")
+            var body = context.source_import(config.compose_cspkg_package())
+            if body == null
+                cspkg_log("cspkg: cannot load cspkg body to fix dependencies.")
+            else
+                body.config.content = config.content
+                body.config.default_content = config.default_content
+                body.config.cancel_prompt = config.cancel_prompt
+                var opt = new array
+                opt.push_back("--fix")
+                body.main("install", opt, new array)
+            end
+        end
+    end
+    function run()
+        doctor.reset()
+        system.out.println("cspkg doctor")
+        system.out.println("")
+        doctor.preload_config()
+        doctor.check_environment()
+        doctor.check_config()
+        doctor.check_install()
+        doctor.check_sources()
+        doctor.check_consistency()
+        doctor.check_tools()
+        system.out.println("Summary: " + doctor.ok_n + " OK, " + doctor.warn_n + " warning(s), " + doctor.fail_n + " error(s)")
+        system.out.println("cspkg launcher v" + launcher_version)
+        if doctor.fixes.empty()
+            system.exit(doctor.fail_n > 0 ? 1 : 0)
+        end
+        system.out.println("")
+        system.out.println("The following fixes are available:")
+        foreach f in doctor.fixes
+            system.out.println("\t- " + f.desc)
+        end
+        if !config.cancel_prompt
+            system.out.println("")
+            system.out.println("Attempt to fix " + doctor.fixes.size + " issue(s)?[y/n]")
+            if system.console.getch().tolower() != 'y'
+                cspkg_log("cspkg: no fixes applied.")
+                system.exit(doctor.fail_n > 0 ? 1 : 0)
+            end
+        end
+        doctor.apply_fixes()
+        system.out.println("cspkg: applied " + doctor.fixes.size + " fix(es). Re-run 'cspkg doctor' to verify.")
+        system.exit(doctor.fail_n > 0 ? 1 : 0)
+    end
+end
+
 # Processing CLI Args
 
 var cspkg_options = {}
@@ -531,6 +1085,11 @@ if cmd_args.size > 1 && cmd_args[1] == "init"
         system.out.print("Configuration file existed: ")
     end
     system.out.println(config.compose_config())
+    system.exit(0)
+end
+
+if cmd_args.size > 1 && cmd_args[1] == "doctor"
+    doctor.run()
     system.exit(0)
 end
 

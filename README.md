@@ -23,6 +23,7 @@ Commands:
     upgrade   | -u                Upgrade local packages
     build     | -b  [Path]        Build & test local packages
     list      | -l                List current packages
+    doctor                        Diagnose and optionally fix common problems
     help      | -h                Show help information
     version   | -v                Show version information
 
@@ -66,6 +67,24 @@ Local path: `~/.cspkg/config.json`
 ```
 
 For fresh installment, you can run `cspkg init` to generate config file manually.
+
+## Diagnostics
+
+Run `cspkg doctor` for a health check of your cspkg setup. It reports one
+`[OK] / [WARN] / [FAIL] / [INFO]` line per check across:
+
++ **Environment** — CovScript STD/platform/arch, `USER_HOME`, `COVSCRIPT_HOME`, and the `imports/` directory (existence and writability).
++ **Configuration** — `~/.cspkg`, `config.json` validity, required keys, and source/proxy URLs.
++ **cspkg installation** — the `imports/cspkg.csp` file and its `packages.json` record are consistent.
++ **Remote sources** — each configured source is reachable, a valid repository, and offers `cspkg`.
++ **Local packages** — `imports/` matches `packages.json` (orphaned records, unmanaged files, broken dependencies).
++ **Build tools** — whether `ecs` (for `.ecs` packages) and `g++` + `CS_DEV_PATH` (for extensions) are available.
+
+After the summary, doctor offers to repair auto-fixable problems (recreate a
+missing/corrupt config, create missing directories, reinstall a broken cspkg, or
+run `install --fix` for dependency issues). Pass `--yes` to apply fixes without
+prompting. It exits non-zero when unresolved errors remain, so it is safe to use
+in scripts.
 
 ## Architecture of a typical CSPKG repository
 
@@ -185,7 +204,7 @@ This descriptor differs from the source-index file in Step 1: its `Target` is a
     "Name": "cspkg",
     "Info": "CovScript Package Manager",
     "Author": "CovScript Organization",
-    "Version": "2.6.0",
+    "Version": "2.6.1",
     "Target": "cspkg.csp",
     "Source": "cspkg.ecs",
     "Dependencies": ["codec", "process", "regex", "curl"]
