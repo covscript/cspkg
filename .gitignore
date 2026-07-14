@@ -8,5 +8,7 @@ imgui.ini
 .idea/
 # CSBuild Files
 build/
+# Extended CovScript Compiler cache
+.ecs_output/
 # macOS Junk
 .DS_Store

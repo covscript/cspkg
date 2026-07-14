@@ -1,6 +1,6 @@
 #!/usr/bin/env cs
 #
-# Covariant Script Package Manager Launcher v1.1.2
+# Covariant Script Package Manager Launcher v1.1.3
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -62,7 +62,7 @@ namespace utils
             return url
         end
     end
-    var win_absolute_path_reg = regex.build("^\\\\*([a-zA-z]:\\\\[^\\s]*)$")
+    var win_absolute_path_reg = regex.build("^\\\\*([a-zA-Z]:\\\\[^\\s]*)$")
     function process_path(path)
         if path == null or path.size == 0
             return path
@@ -99,7 +99,7 @@ namespace utils
         end
         return new_path
     end
-    var url_reg = regex.build("^([a-zA-z]+)://(/*[\\w.:]+)([^\\s]*)$")
+    var url_reg = regex.build("^([a-zA-Z]+)://(/*[\\w.:]+)([^\\s]*)$")
     function parse_url(url)
         var m = utils.url_reg.match(url)
         if !m.empty() && m.size() == 4
@@ -160,7 +160,16 @@ namespace utils
         session.set_accept_timeout_ms(config.content.timeout_ms.to_number())
         session.set_low_speed_limit(low_speed_limit)
         session.set_low_speed_time(config.content.timeout_ms.to_number())
-        return session.perform() ? 1 : 0
+        var success = session.perform()
+        # Release handles so the file can be cleaned up on failure
+        session = null
+        ofs = null
+        if !success
+            # Remove the partially written file to avoid corrupt imports
+            system.file.remove(path)
+            return 0
+        end
+        return 1
     end
     function get_content(url)
         var url_info = utils.parse_url(url)
@@ -463,7 +472,7 @@ function cspkg_main()
             system.out.println("Do you want to continue?[y/n]")
             if system.console.getch().tolower() != 'y'
                 cspkg_log("cspkg: installation canceled.")
-                system.exit(0)
+                system.exit(1)
             end
         end
         packages["cspkg"] = remote_info
@@ -530,7 +539,7 @@ cspkg_main()
 var cspkg = context.source_import(config.compose_cspkg_package())
 if cspkg == null
     cspkg_log("cspkg: broken cspkg installation.")
-    system.exit(0)
+    system.exit(1)
 end
 if cmd_args.size == 1
     cspkg.show_help(null, null)
