@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 #
-# Copyright (C) 2017-2025 Michael Lee(李登淳)
+# Copyright (C) 2017-2026 Michael Lee(李登淳)
 #
 # Email:   mikecovlee@163.com
 # Github:  https://github.com/mikecovlee
@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.6.3"
+constant cspkg_version = "2.6.4"
 
 import codec.json as json
 import process
@@ -400,6 +400,21 @@ function cspkg_log(msg)
     log_impl.log.println(msg)
 end
 
+function find_broken_deps(local_pac)
+    var deps_set = new hash_set
+    foreach pac in local_pac
+        foreach dep in pac.second.Dependencies
+            deps_set.insert(dep)
+        end
+    end
+    foreach pac in local_pac
+        if deps_set.exist(pac.first)
+            deps_set.erase(pac.first)
+        end
+    end
+    return deps_set
+end
+
 # Command Line Parser
 
 function draw_separator()
@@ -533,17 +548,7 @@ class cspkg_install
         if local_pac == null
             local_pac = config.check_local_packages()
         end
-        deps_set = new hash_set
-        foreach pac in local_pac
-            foreach dep in pac.second.Dependencies
-                deps_set.insert(dep)
-            end
-        end
-        foreach pac in local_pac
-            if deps_set.exist(pac.first)
-                deps_set.erase(pac.first)
-            end
-        end
+        deps_set = find_broken_deps(local_pac)
         return deps_set.empty()
     end
     function upgrade()
@@ -919,16 +924,20 @@ function build_install(base_path, pacs)
             if !json_reg.match(entry.name).empty()
                 var info = utils.open_json(path + system.path.separator + entry.name)
                 if !pacs.empty()
-                    if pacs.exist(info.Name)
-                        pacs.erase(info.Name)
-                    else
+                    if !pacs.exist(info.Name)
                         continue
                     end
                 end
-                if info.Type == "Extension"
+                if info.exist("Type") && info.Type == "Extension"
                     if info.exist("Source")
                         cspkg_print("Source file detected, building...")
-                        build_compile(base_path + info.Source, "")
+                        if !build_compile(base_path + info.Source, {})
+                            cspkg_log("cspkg: extension \'" + info.Name + "\' compilation failed.")
+                            if !pacs.empty()
+                                pacs.erase(info.Name)
+                            end
+                            continue
+                        end
                     end
                     info.Version += "_ABI" + env.covscript_abi()
                 end
@@ -939,16 +948,28 @@ function build_install(base_path, pacs)
                     if !dir_m.empty()
                         out_dir = base_path + dir_m.str(1)
                     end
-                    build_ecs_compile(base_path + info.Source, out_dir, {})
+                    if !build_ecs_compile(base_path + info.Source, out_dir, {})
+                        cspkg_log("cspkg: package \'" + info.Name + "\' compilation failed.")
+                        if !pacs.empty()
+                            pacs.erase(info.Name)
+                        end
+                        continue
+                    end
                 end
                 cspkg_print("Installing local package " + info.Name + "(" + info.Version + ")...")
                 var file_name = target_file_reg.match(info.Target)
                 if file_name.empty() || !system.file.exist(base_path + info.Target)
                     cspkg_log("cspkg: invalid target in module \'" + base_path + "\'")
+                    if !pacs.empty()
+                        pacs.erase(info.Name)
+                    end
                     continue
                 end
                 if !system.file.copy(base_path + info.Target, env.covscript_home() + system.path.separator + "imports" + system.path.separator + file_name.str(1))
                     cspkg_log("cspkg: package \'" + info.Name + "\' install failed(unable to create file, try run with rights of administrator).")
+                    if !pacs.empty()
+                        pacs.erase(info.Name)
+                    end
                     continue
                 end
                 info.erase("Type")
@@ -957,20 +978,13 @@ function build_install(base_path, pacs)
                 local_pac.insert(info.Name, info)
                 utils.save_json(local_pac, config.compose_packages())
                 cspkg_log("cspkg: package \'" + info.Name + "\' installed successfully.")
+                if !pacs.empty()
+                    pacs.erase(info.Name)
+                end
             end
         end
     end
-    var deps_set = new hash_set
-    foreach pac in local_pac
-        foreach dep in pac.second.Dependencies
-            deps_set.insert(dep)
-        end
-    end
-    foreach pac in local_pac
-        if deps_set.exist(pac.first)
-            deps_set.erase(pac.first)
-        end
-    end
+    var deps_set = find_broken_deps(local_pac)
     if !deps_set.empty()
         cspkg_log("cspkg: broken dependencies. run \'cspkg install --fix\' to fix dependencies.")
     end
@@ -1068,13 +1082,17 @@ function build_ecs_compile(source_path, out_dir, extra_opts)
     .arg({"-o", out_dir, "-g", "-c", "-f", "-u", "UTF8", extra_opts..., source_path})
     .inherit_env(true).start().communicate()
 @end
-    if stdout.trim().empty() && stderr.trim().empty() && code == 0
+    if stdout != null && stderr != null && code == 0 && stdout.trim().empty() && stderr.trim().empty()
         cspkg_log("cspkg: CovScript source \'" + source_path + "\' compiled successfully.")
         return true
     else
         cspkg_log("cspkg: error when compiling CovScript source \'" + source_path + "\'.")
-        cspkg_log(stdout)
-        cspkg_log(stderr)
+        if stdout != null
+            cspkg_log(stdout)
+        end
+        if stderr != null
+            cspkg_log(stderr)
+        end
         return false
     end
 end
@@ -1104,7 +1122,7 @@ function build_compile(source_path, cxx_opts)
         end
         if !found_cxx
             cspkg_log("cspkg: can't find CXX compiler")
-            system.exit(1)
+            return false
         end
     end
     var csdev_path = null
@@ -1116,25 +1134,33 @@ function build_compile(source_path, cxx_opts)
             cspkg_log("cspkg: set \'CS_DEV_PATH\' to \'/usr/\' automatically in linux.")
             csdev_path = "/usr/"
         else
-            system.exit(1)
+            return false
         end
     end
     csdev_path = csdev_path.split({system.path.delimiter}).at(0)
     cspkg_log("CSDEV PATH: " + csdev_path)
     var file_reg = regex.build("^.*?(\\w+)\\.(c|cc|cpp|cxx)$")
     var file_name = file_reg.match(source_path)
+    if file_name.empty()
+        cspkg_log("cspkg: target file \'" + source_path + "\' is not a valid C++ source file.")
+        return false
+    end
     cspkg_log("Building module \'" + file_name.str(1) + ".cse\'...")
 @begin
     var (stdout, stderr, code) = (new process.builder).shell(process.default_shell()).cmd("g++")
     .arg({"-std=c++17", "--shared", "-fPIC", "-O2", "-I" + csdev_path + system.path.separator + "include",
         source_path, "-L" + csdev_path + system.path.separator + "lib", "-lcovscript", "-o",
-        file_name.str(1) + ".cse", cxx_opts})
+        file_name.str(1) + ".cse", cxx_opts...})
     .inherit_env(true).start().communicate()
 @end
     if code != 0
         cspkg_log("cspkg: error when compiling extension \'" + source_path + "\'.")
-        cspkg_log(stdout)
-        cspkg_log(stderr)
+        if stdout != null
+            cspkg_log(stdout)
+        end
+        if stderr != null
+            cspkg_log(stderr)
+        end
     end
     return code == 0
 end
@@ -1182,14 +1208,16 @@ function run_build(opt, args)
                 build_release(base_path, opt[1], flat)
             end
             case "--compile"
-                var opts = new string
-                for i = 1, i < opt.size, ++i do opts += opt[i] + " "
+                var pargs = new array
+                for i = 1, i < opt.size, ++i
+                    pargs.push_back(opt[i])
+                end
                 if !ecs_source_reg.match(args[0]).empty()
-                    if !build_ecs_compile(args[0], ".", opts)
+                    if !build_ecs_compile(args[0], ".", pargs)
                         system.exit(1)
                     end
                 else
-                    if !build_compile(args[0], opts)
+                    if !build_compile(args[0], pargs)
                         system.exit(1)
                     end
                 end
