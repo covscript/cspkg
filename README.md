@@ -17,8 +17,8 @@ Usage: cspkg <commands> ... [options] ...
 
 Commands:
     init                          Initialize cspkg environment and configuration
-    install   | -i  <Package>...  Install packages from remote source
-    remove    | -r  <Package>...  Remove packages
+    install   | -i  <Packages>...  Install packages from remote source
+    remove    | -r  <Packages>...  Remove packages
     config    | -c  <Key>         Manage local configuration
     upgrade   | -u                Upgrade local packages
     build     | -b  [Path]        Build & test local packages
@@ -31,7 +31,7 @@ Options:
   General
     --yes                         Assume yes; skip confirmation prompts
 
-  cspkg install
+  cspkg install <Packages>...
     --fix                         Fix broken dependencies
     --import                      Scanning local CovScript packages
     --show-avail                  Show available CovScript packages in remote source
@@ -44,9 +44,9 @@ Options:
     --app         <Value>         Append to a configuration key
     --unset                       Restore a configuration key to default
 
-  cspkg build
+  cspkg build [Path = .]
     --install     [Package]...    Install a local package
-    --compile     [Argument]...   Compile a CXX extension or ECS source
+    --compile     [Argument]...   Compile a CXX extension or ECS source. [Path] must be a valid file
     --release     <Source URL>    Generate package index files for release
     --flat                        Don't create cspkg-repo directory structure
 

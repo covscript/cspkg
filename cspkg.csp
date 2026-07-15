@@ -29,7 +29,7 @@
 
 package cspkg
 
-constant cspkg_version = "2.6.2"
+constant cspkg_version = "2.6.3"
 
 import codec.json as json
 import process
@@ -939,7 +939,7 @@ function build_install(base_path, pacs)
                     if !dir_m.empty()
                         out_dir = base_path + dir_m.str(1)
                     end
-                    build_ecs_compile(base_path + info.Source, out_dir)
+                    build_ecs_compile(base_path + info.Source, out_dir, {})
                 end
                 cspkg_print("Installing local package " + info.Name + "(" + info.Version + ")...")
                 var file_name = target_file_reg.match(info.Target)
@@ -1057,7 +1057,7 @@ function build_release(base_path, url, flat)
     utils.save_json({"universal", env.platform() + "/" + env.arch()}, root_index)
 end
 
-function build_ecs_compile(source_path, out_dir)
+function build_ecs_compile(source_path, out_dir, extra_opts)
     if !system.file.exist(source_path)
         cspkg_log("cspkg: source file \'" + source_path + "\' not found.")
         return false
@@ -1065,15 +1065,18 @@ function build_ecs_compile(source_path, out_dir)
     cspkg_log("Compiling CovScript source \'" + source_path + "\'...")
 @begin
     var (stdout, stderr, code) = (new process.builder).shell(process.default_shell()).cmd("ecs")
-    .arg({"-o", out_dir, "-g", "-c", "-f", "-u", "UTF8", source_path})
+    .arg({"-o", out_dir, "-g", "-c", "-f", "-u", "UTF8", extra_opts..., source_path})
     .inherit_env(true).start().communicate()
 @end
-    if code != 0
+    if stdout.trim().empty() && stderr.trim().empty() && code == 0
+        cspkg_log("cspkg: CovScript source \'" + source_path + "\' compiled successfully.")
+        return true
+    else
         cspkg_log("cspkg: error when compiling CovScript source \'" + source_path + "\'.")
         cspkg_log(stdout)
         cspkg_log(stderr)
+        return false
     end
-    return code == 0
 end
 
 function build_compile(source_path, cxx_opts)
@@ -1182,7 +1185,7 @@ function run_build(opt, args)
                 var opts = new string
                 for i = 1, i < opt.size, ++i do opts += opt[i] + " "
                 if !ecs_source_reg.match(args[0]).empty()
-                    if !build_ecs_compile(args[0], ".")
+                    if !build_ecs_compile(args[0], ".", opts)
                         system.exit(1)
                     end
                 else
@@ -1345,8 +1348,8 @@ function show_help(opt, args)
         "Usage: cspkg <commands> ... [options] ...\n" +
         "\nCommands:\n" +
         "    init                          Initialize cspkg environment and configuration\n" +
-        "    install   | -i  <Package>...  Install packages from remote source\n" +
-        "    remove    | -r  <Package>...  Remove packages\n" +
+        "    install   | -i  <Packages>...  Install packages from remote source\n" +
+        "    remove    | -r  <Packages>...  Remove packages\n" +
         "    config    | -c  <Key>         Manage local configuration\n" +
         "    upgrade   | -u                Upgrade local packages\n" +
         "    build     | -b  [Path]        Build & test local packages\n" +
@@ -1357,7 +1360,7 @@ function show_help(opt, args)
         "\nOptions:\n" +
         "  General\n" +
         "    --yes                         Assume yes; skip confirmation prompts\n\n" +
-        "  cspkg install\n" +
+        "  cspkg install <Packages>...\n" +
         "    --fix                         Fix broken dependencies\n" +
         "    --import                      Scanning local CovScript packages\n" +
         "    --show-avail                  Show available CovScript packages in remote source\n\n" +
@@ -1367,9 +1370,9 @@ function show_help(opt, args)
         "    --set         <Value>         Set a configuration key\n" +
         "    --app         <Value>         Append to a configuration key\n" +
         "    --unset                       Restore a configuration key to default\n\n" +
-        "  cspkg build\n" +
+        "  cspkg build [Path = .]\n" +
         "    --install     [Package]...    Install a local package\n" +
-        "    --compile     [Argument]...   Compile a CXX extension or ECS source\n" +
+        "    --compile     [Argument]...   Compile a CXX extension or ECS source. [Path] must be a valid file\n" +
         "    --release     <Source URL>    Generate package index files for release\n" +
         "    --flat                        Don't create cspkg-repo directory structure\n"
     )
